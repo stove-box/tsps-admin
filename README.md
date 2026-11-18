@@ -1,4 +1,4 @@
-# tsps admin
+# TSPS | Server Admin Panel
 
 One local page to start, stop and watch every tsps server on this PC: the main checkout and each
 `scripts/wt` worktree.
@@ -58,3 +58,6 @@ link with that server's token, so treat the panel link like a password.
 ## Development
 
 No dependencies; Node 22.16+. `npm test` runs the unit tests.
+
+The page's look (palette, IBM Plex Sans, status pills, server bar) follows the server's world config
+page. The Plex fonts are under the SIL Open Font License (`public/ibm-plex-license.txt`).

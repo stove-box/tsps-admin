@@ -3,55 +3,73 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>tsps admin</title>
+  <title>TSPS | Server Admin Panel</title>
+  <link rel="icon" type="image/svg+xml" href="favicon.svg">
+  <link rel="icon" type="image/png" sizes="96x96" href="favicon-96x96.png">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <header>
-    <div class="brand">
-      <h1>tsps admin</h1>
-      <span id="repo" class="muted"></span>
+<div class="layout">
+  <header class="server-bar">
+    <div class="bar-left">
+      <button type="button" id="menu-toggle" class="menu-toggle" aria-label="Show servers" aria-controls="sidebar" aria-expanded="false">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16" /></svg>
+      </button>
+      <img class="logo" src="favicon.svg" alt="" width="26" height="26">
+      <div class="title"><strong>TSPS</strong><span class="sep">|</span><span class="long">Server Admin Panel</span></div>
     </div>
-    <div class="actions">
-      <span id="conn" class="conn">connecting…</span>
-      <button id="fetch" title="git fetch --all --prune">Fetch</button>
-      <button id="new" class="primary">New worktree</button>
+    <div class="bar-right">
+      <span id="summary" class="summary"></span>
+      <span id="conn" class="conn" title="Live updates">connecting…</span>
+      <button type="button" id="fetch" title="git fetch --all --prune">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11m0 0-4-4m4 4 4-4M5 19h14" /></svg>
+        Fetch
+      </button>
+      <button type="button" id="new" class="primary">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>
+        <span class="label">New worktree</span>
+      </button>
     </div>
   </header>
 
-  <main>
-    <section id="servers" class="grid" aria-live="polite"></section>
+  <aside id="sidebar" class="sidebar">
+    <div class="group-label">Servers</div>
+    <nav id="server-list" class="server-list" aria-label="Servers"></nav>
+    <div id="activity-wrap" hidden>
+      <div class="group-label">Activity</div>
+      <div id="tasks" class="tasks"></div>
+    </div>
+  </aside>
+  <button type="button" id="menu-backdrop" class="menu-backdrop" aria-label="Close servers menu" tabindex="-1" hidden></button>
 
-    <section id="tasks-wrap" hidden>
-      <h2>Tasks</h2>
-      <div id="tasks"></div>
+  <main id="workspace" class="workspace">
+    <section id="detail" class="detail"></section>
+
+    <section class="logs" aria-label="Logs">
+      <div class="logs-head">
+        <h2>Console</h2>
+        <input id="logs-filter" type="search" placeholder="Filter lines" aria-label="Filter log lines">
+        <label class="toggle"><input id="logs-follow" type="checkbox" checked><span class="switch" aria-hidden="true"></span>Follow</label>
+      </div>
+      <pre id="logs-body" class="logs-body" tabindex="0"></pre>
     </section>
   </main>
+</div>
 
-  <section id="logs" class="logs" hidden>
-    <div class="logs-bar">
-      <strong id="logs-title">Logs</strong>
-      <input id="logs-filter" type="search" placeholder="Filter">
-      <label class="check"><input id="logs-follow" type="checkbox" checked> Follow</label>
-      <button id="logs-close" aria-label="Close logs">✕</button>
+<dialog id="new-dialog">
+  <form method="dialog" id="new-form">
+    <h2>New worktree</h2>
+    <p class="muted">Runs <code>scripts/wt new</code>: creates <code>../tsps-&lt;branch&gt;</code>, gives it a port slot and copies <code>node_modules</code>. Copying can take a few minutes; progress shows under Activity.</p>
+    <label>Branch <input type="text" name="branch" required placeholder="fix/my-change" autocomplete="off" spellcheck="false"></label>
+    <label>Base <input type="text" name="base" placeholder="origin/main" autocomplete="off" spellcheck="false"></label>
+    <div class="dialog-actions">
+      <button value="cancel" formnovalidate>Cancel</button>
+      <button value="ok" class="primary">Create worktree</button>
     </div>
-    <pre id="logs-body"></pre>
-  </section>
+  </form>
+</dialog>
 
-  <dialog id="new-dialog">
-    <form method="dialog" id="new-form">
-      <h2>New worktree</h2>
-      <p class="muted">Runs <code>scripts/wt new</code>: creates <code>../tsps-&lt;branch&gt;</code>, gives it a port slot and copies <code>node_modules</code>. Copying can take a few minutes.</p>
-      <label>Branch <input name="branch" required placeholder="fix/my-change" autocomplete="off"></label>
-      <label>Base <input name="base" placeholder="origin/main (default)" autocomplete="off"></label>
-      <div class="row end">
-        <button value="cancel" formnovalidate>Cancel</button>
-        <button value="ok" class="primary">Create</button>
-      </div>
-    </form>
-  </dialog>
-
-  <div id="toast" class="toast" hidden></div>
-  <script src="app.js"></script>
+<div id="toast" class="toast" role="alert" hidden></div>
+<script src="app.js"></script>
 </body>
 </html>

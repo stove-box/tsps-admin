@@ -74,7 +74,10 @@ async function readJson(req) {
   try { return body ? JSON.parse(body) : {}; } catch { throw Object.assign(new Error("Invalid JSON"), { status: 400 }); }
 }
 
-const TYPES = { ".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8", ".svg": "image/svg+xml" };
+const TYPES = {
+  ".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8",
+  ".svg": "image/svg+xml", ".png": "image/png", ".woff2": "font/woff2", ".txt": "text/plain; charset=utf-8",
+};
 
 // ---- live updates (server-sent events) ----
 
@@ -115,9 +118,13 @@ async function handle(req, res) {
   }
   if (!authed(req)) {
     return send(res, 401, url.pathname.startsWith("/api/") ? { error: "Unauthorized" }
-      : `<!doctype html><meta charset=utf-8><title>tsps admin</title><body style="font:15px system-ui;padding:2rem;background:#111;color:#ddd">
-         Open the link the panel printed when it started (it ends in <code>?token=…</code>).<br>
-         The token is in <code>data/admin.token</code>.</body>`);
+      : `<!doctype html><meta charset=utf-8><meta name=viewport content="width=device-width,initial-scale=1">
+         <title>TSPS | Server Admin Panel</title><link rel=icon href="data:,">
+         <body style="margin:0;min-height:100vh;display:grid;place-items:center;background:#16171a;color:#e4dfd3;font:14px/1.6 system-ui,sans-serif;padding:16px">
+         <div style="max-width:420px;border:1px solid rgba(202,169,94,.26);border-radius:8px;background:#1c1d21;padding:22px 24px">
+         <div style="color:#caa95e;font-weight:600;letter-spacing:.08em;margin-bottom:8px">TSPS <span style="color:rgba(202,169,94,.26)">|</span> <span style="color:#c4bfb2;letter-spacing:0;font-weight:400">Server Admin Panel</span></div>
+         Open the link the panel printed when it started (it ends in <code>?token=…</code>).
+         The token is in <code>data/admin.token</code>.</div></body>`);
   }
 
   if (req.method === "GET" && !url.pathname.startsWith("/api/")) {
