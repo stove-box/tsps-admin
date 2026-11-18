@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>tsps admin</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header>
+    <div class="brand">
+      <h1>tsps admin</h1>
+      <span id="repo" class="muted"></span>
+    </div>
+    <div class="actions">
+      <span id="conn" class="conn">connecting…</span>
+      <button id="fetch" title="git fetch --all --prune">Fetch</button>
+      <button id="new" class="primary">New worktree</button>
+    </div>
+  </header>
+
+  <main>
+    <section id="servers" class="grid" aria-live="polite"></section>
+
+    <section id="tasks-wrap" hidden>
+      <h2>Tasks</h2>
+      <div id="tasks"></div>
+    </section>
+  </main>
+
+  <section id="logs" class="logs" hidden>
+    <div class="logs-bar">
+      <strong id="logs-title">Logs</strong>
+      <input id="logs-filter" type="search" placeholder="Filter">
+      <label class="check"><input id="logs-follow" type="checkbox" checked> Follow</label>
+      <button id="logs-close" aria-label="Close logs">✕</button>
+    </div>
+    <pre id="logs-body"></pre>
+  </section>
+
+  <dialog id="new-dialog">
+    <form method="dialog" id="new-form">
+      <h2>New worktree</h2>
+      <p class="muted">Runs <code>scripts/wt new</code>: creates <code>../tsps-&lt;branch&gt;</code>, gives it a port slot and copies <code>node_modules</code>. Copying can take a few minutes.</p>
+      <label>Branch <input name="branch" required placeholder="fix/my-change" autocomplete="off"></label>
+      <label>Base <input name="base" placeholder="origin/main (default)" autocomplete="off"></label>
+      <div class="row end">
+        <button value="cancel" formnovalidate>Cancel</button>
+        <button value="ok" class="primary">Create</button>
+      </div>
+    </form>
+  </dialog>
+
+  <div id="toast" class="toast" hidden></div>
+  <script src="app.js"></script>
+</body>
+</html>

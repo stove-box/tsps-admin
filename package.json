@@ -1,0 +1,12 @@
+{
+  "name": "tsps-admin",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Local admin panel that starts and manages tsps servers across worktrees.",
+  "type": "module",
+  "engines": { "node": ">=22.16.0" },
+  "scripts": {
+    "start": "node src/server.mjs",
+    "test": "node --test \"test/*.test.mjs\""
+  }
+}
