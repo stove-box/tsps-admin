@@ -136,11 +136,21 @@ test("transitions: a restart stays on screen until the world is back online, and
   assert.equal(rec.transition.players, 2);
 });
 
-test("worlds are numbered from 1: the main checkout, then each slot", async () => {
+test("worlds are numbered 1, 2, 3... in creation order, closing gaps on removal", async () => {
   const { worldNumber } = await import("../src/fleet.mjs");
-  assert.equal(worldNumber({ ports: { slot: null } }), 1);
-  assert.equal(worldNumber({ ports: { slot: 1 } }), 2);
-  assert.equal(worldNumber({ ports: { slot: 5 } }), 6);
+  const main = { main: true, ports: { slot: null } };
+  const a = { ports: { slot: 1 }, createdAt: 100 };
+  const b = { ports: { slot: 2 }, createdAt: 200 };
+  const c = { ports: { slot: 3 }, createdAt: 300 };
+  const all = [main, a, b, c];
+  assert.deepEqual(all.map((w) => worldNumber(w, all)), [1, 2, 3, 4]);
+  // Remove World 2: the ones below move up.
+  const left = [main, b, c];
+  assert.deepEqual(left.map((w) => worldNumber(w, left)), [1, 2, 3]);
+  // A new world that reuses the freed slot 1 still goes to the bottom of the list.
+  const d = { ports: { slot: 1 }, createdAt: 400 };
+  const now = [main, b, c, d];
+  assert.deepEqual(now.map((w) => worldNumber(w, now)), [1, 2, 3, 4]);
 });
 
 test("GitHub remotes: owner/name from https and ssh URLs", async () => {

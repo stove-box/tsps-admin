@@ -867,13 +867,10 @@ function branchFromName(name) {
     .split("/").map((part) => part.replace(/^[.-]+/, "").replace(/(\.lock)+$|\.+$/g, "")).filter(Boolean).join("/");
 }
 
-/** What `scripts/wt new` will make: the next free slot (as a world number) and the folder beside the main checkout. */
+/** What `scripts/wt new` will make: the next number at the bottom of the list, and the folder beside the main checkout. */
 function newWorldPlan(branch) {
-  const used = new Set(state.servers.map((s) => s.ports.slot).filter(Boolean));
-  let slot = 1;
-  while (used.has(slot) && slot < 99) slot++;
   const main = (state.repo ?? "tsps").split(/[\\/]/).pop();
-  return { number: 1 + slot, folder: `${main}-${branch.replace(/\//g, "-")}` };
+  return { number: state.servers.length + 1, folder: `${main}-${branch.replace(/\//g, "-")}` };
 }
 
 let pendingWorld = null; // { folder, number, task } until the new world shows up in the list

@@ -1,6 +1,6 @@
 import { execFile, spawn } from "node:child_process";
 import { EventEmitter } from "node:events";
-import { createWriteStream, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { createWriteStream, existsSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
 import http from "node:http";
 import { basename, dirname, join, resolve } from "node:path";
 import { childEnv, portsFor, worktreeEnv, worldAdminToken } from "./env.mjs";
@@ -129,8 +129,18 @@ export function failureLine(lines) {
   return clean.length > 160 ? clean.slice(0, 157) + "..." : clean;
 }
 
-/** A world's number: World 1 is the main checkout, then each worktree slot counts on from there. */
-export const worldNumber = (rec) => 1 + (rec.ports?.slot ?? 0);
+/**
+ * A world's number, for display only: World 1 is the main checkout, then the others count on in the
+ * order they were created (oldest first), so the list always reads 1, 2, 3... and a removal closes
+ * the gap. `all` is every world the panel knows; `createdAt` is when the world's folder was made.
+ */
+export function worldNumber(rec, all) {
+  if (rec.main) return 1;
+  const others = all.filter((r) => !r.main && r.ports?.slot != null)
+    .sort((a, b) => (a.createdAt ?? 0) - (b.createdAt ?? 0) || a.ports.slot - b.ports.slot);
+  const i = others.indexOf(rec);
+  return 2 + (i < 0 ? others.length : i);
+}
 
 const slug = (dir) => basename(dir).toLowerCase().replace(/[^a-z0-9-]+/g, "-");
 
@@ -180,6 +190,7 @@ export class Fleet extends EventEmitter {
       rec.main = samePath(wt.dir, this.repo);
       rec.branch = wt.branch;
       rec.detached = wt.detached;
+      if (rec.createdAt == null) { try { rec.createdAt = statSync(wt.dir).birthtimeMs || statSync(wt.dir).ctimeMs; } catch { rec.createdAt = Date.now(); } }
       rec.ports = portsFor(env);
       rec.token = worldAdminToken(wt.dir, env);
       rec.world = worldInfo(wt.dir);
@@ -536,7 +547,7 @@ export class Fleet extends EventEmitter {
       this.log(rec, `[admin] world type -> ${label} (${applied})`);
       return {
         result: applied,
-        message: applied === "countdown" ? `Players get a ${r.json.seconds}-second update countdown, then World ${worldNumber(rec)} restarts as ${label}.`
+        message: applied === "countdown" ? `Players get a ${r.json.seconds}-second update countdown, then World ${worldNumber(rec, [...this.servers.values()])} restarts as ${label}.`
           : applied === "restarting" ? `Restarting as ${label}.`
           : `Saved. Restart the world to become ${label}.`,
       };
@@ -549,7 +560,7 @@ export class Fleet extends EventEmitter {
     rec.world = worldInfo(rec.dir);
     this.log(rec, `[admin] world type -> ${label} (saved for the next launch)`);
     this.emit("state");
-    return { result: "written", message: `Saved. World ${worldNumber(rec)} is ${label} from its next launch.` };
+    return { result: "written", message: `Saved. World ${worldNumber(rec, [...this.servers.values()])} is ${label} from its next launch.` };
   }
 
   setFlags(id, { autostart, autorestart }) {
@@ -638,7 +649,7 @@ export class Fleet extends EventEmitter {
   pull(id) {
     const rec = this.get(id);
     if (!rec.git?.upstream) throw Object.assign(new Error("This branch has no upstream to pull from."), { status: 409 });
-    const n = worldNumber(rec);
+    const n = worldNumber(rec, [...this.servers.values()]);
     return this.task({ kind: "update", title: `Update World ${n}`, detail: rec.branch, key: `update:${rec.id}`, cooldownMs: 10_000 }, async (onLine, job) => {
       // Following the fork's default branch: bring the fork up to its parent on GitHub first, as
       // GitHub's "Sync fork" does. gh refuses (fast-forward only) if the fork's branch has its own commits.
@@ -675,7 +686,7 @@ export class Fleet extends EventEmitter {
       if (code !== 0) return code;
       await this.refresh();
       const rec = [...this.servers.values()].find((r) => samePath(r.dir, dir));
-      const n = rec ? worldNumber(rec) : null;
+      const n = rec ? worldNumber(rec, [...this.servers.values()]) : null;
       const world = n ? `World ${n}` : "The world";
       if (n) job.title = `Create World ${n}`;
       job.summary = `${world} is ready`;
@@ -704,7 +715,7 @@ export class Fleet extends EventEmitter {
     if (rec.proc || rec.probe?.gameUp || rec.probe?.panelUp) throw Object.assign(new Error("Shut the world down first."), { status: 409 });
     await this.refreshGit(rec);
     const dir = rec.dir.replace(/\\/g, "/");
-    const meta = { kind: "remove", title: `Remove World ${worldNumber(rec)}`, detail: rec.branch ?? basename(rec.dir), key: `remove:${rec.id}` };
+    const meta = { kind: "remove", title: `Remove World ${worldNumber(rec, [...this.servers.values()])}`, detail: rec.branch ?? basename(rec.dir), key: `remove:${rec.id}` };
     const kept = `Removed; branch ${meta.detail} kept`;
     if (!rec.git?.dirty) {
       return this.task(meta, async (onLine, job) => {
@@ -752,7 +763,7 @@ export class Fleet extends EventEmitter {
       countdown: rec.probe?.countdown ?? null,
       autostart: !!this.settings.autostart[k],
       autorestart: !!this.settings.autorestart[k],
-      world: { ...rec.world, number: worldNumber(rec) },
+      world: { ...rec.world, number: worldNumber(rec, [...this.servers.values()]) },
       git: rec.git && { ...rec.git, fork: rec.forkBehind == null ? null : { behind: rec.forkBehind, parent: this.forkParent ?? null, repo: this.forkRepo ?? null } },
       links: {
         client: `http://localhost:${rec.ports.client}`,
@@ -764,7 +775,7 @@ export class Fleet extends EventEmitter {
 
   state() {
     const servers = [...this.servers.values()].map((r) => this.view(r));
-    servers.sort((a, b) => (b.main - a.main) || (a.ports.slot ?? 0) - (b.ports.slot ?? 0) || a.id.localeCompare(b.id));
+    servers.sort((a, b) => a.world.number - b.world.number || a.id.localeCompare(b.id));
     return { repo: this.repo, servers, tasks: this.tasks.map(({ lines, ...t }) => ({ ...t, lines: lines.slice(-200) })) };
   }
 }

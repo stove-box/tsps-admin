@@ -13,8 +13,9 @@ get a new one).
 
 ## Worlds
 
-Each checkout is a world. Its number is 1 + its `scripts/wt` slot (the main checkout is World 1, slot 1
-is World 2, slot 2 is World 3). Name, description, members/free and XP rate come
+Each checkout is a world. Its number is only for display: the main checkout is World 1 and the others
+count on in the order they were created, so the list always reads 1, 2, 3... and removing a world
+closes the gap (each world keeps its own `scripts/wt` slot and ports). Name, description, members/free and XP rate come
 from its `server/data/definitions/world.json` with `world.local.json` over it (members while the
 FreeToPlay plugin is off, as in the server), and from the live world once it's online.
 
