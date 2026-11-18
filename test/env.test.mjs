@@ -52,7 +52,45 @@ test("world info: members unless the FreeToPlay plugin is on; local file wins", 
   const defs = join(dir, "server", "data", "definitions");
   mkdirSync(defs, { recursive: true });
   writeFileSync(join(defs, "world.json"), JSON.stringify({ name: "Old School RuneScape", experienceMultiplier: 1, plugins: {} }));
-  assert.deepEqual(worldInfo(dir), { name: "Old School RuneScape", description: "", members: true, xp: 1 });
+  const pick = (w) => ({ name: w.name, type: w.type, members: w.members, xp: w.xp });
+  assert.deepEqual(pick(worldInfo(dir)), { name: "Old School RuneScape", type: "members", members: true, xp: 1 });
   writeFileSync(join(defs, "world.local.json"), JSON.stringify({ name: "Test", experienceMultiplier: 5, plugins: { FreeToPlay: { enabled: true } } }));
-  assert.deepEqual(worldInfo(dir), { name: "Test", description: "", members: false, xp: 5 });
+  assert.deepEqual(pick(worldInfo(dir)), { name: "Test", type: "f2p", members: false, xp: 5 });
+});
+
+test("world types: read, change and write like the server's world settings page", async () => {
+  const wt = await import("../src/worldtype.mjs");
+  const shipped = { spawn: { x: 3089, y: 3524, z: 0 }, zones: [{ minX: 3000, maxX: 3100, minY: 3500, maxY: 3600, tags: ["f2p"] }], plugins: {} };
+  assert.equal(wt.currentType(wt.merge(shipped, {})), "members");
+
+  let local = wt.applyChanges(shipped, {}, wt.changesFor("league:5", shipped));
+  assert.deepEqual(local, { pluginConfig: { "league:type": 5 } }, "no clutter: unset keys stay unset");
+  assert.equal(wt.currentType(wt.merge(shipped, local)), "league:5");
+
+  local = wt.applyChanges(shipped, { name: "Mine", ...local }, wt.changesFor("f2p", shipped));
+  assert.deepEqual(local, { name: "Mine", plugins: { FreeToPlay: true } }, "other settings are kept; the league is dropped");
+  assert.equal(wt.currentType(wt.merge(shipped, local)), "f2p");
+  assert.equal(wt.validate(wt.merge(shipped, local)), null);
+
+  const farSpawn = { ...shipped, spawn: { x: 1, y: 1, z: 0 } };
+  assert.match(wt.validate(wt.merge(farSpawn, local)), /spawn inside a zone tagged "f2p"/);
+
+  local = wt.applyChanges(shipped, local, wt.changesFor("members", shipped));
+  assert.deepEqual(local, { name: "Mine" });
+
+  // world.json that sets a key itself gets an explicit off value instead of a dropped override.
+  const shippedHc = { ...shipped, pluginConfig: { "HardcoreWorld:enabled": true } };
+  assert.equal(wt.currentType(wt.merge(shippedHc, {})), "hardcore");
+  assert.deepEqual(wt.applyChanges(shippedHc, {}, wt.changesFor("members", shippedHc)), { pluginConfig: { "HardcoreWorld:enabled": false } });
+});
+
+test("world types offered follow the worktree's own data", async () => {
+  const wt = await import("../src/worldtype.mjs");
+  const dir = mkdtempSync(join(tmpdir(), "tsps-admin-"));
+  const data = join(dir, "server", "plugins", "modes", "data");
+  mkdirSync(data, { recursive: true });
+  assert.deepEqual(wt.availableTypes(dir).map((t) => t.id), ["members", "f2p"]);
+  writeFileSync(join(data, "hardcore-world.json"), "{}");
+  writeFileSync(join(data, "leagues.json"), JSON.stringify({ leagues: { 1: { name: "Leagues I - Twisted" }, 5: { name: "Leagues V - Raging Echoes" } } }));
+  assert.deepEqual(wt.availableTypes(dir).map((t) => t.id), ["members", "f2p", "hardcore", "league:1", "league:5"]);
 });

@@ -5,6 +5,7 @@ import http from "node:http";
 import { basename, join, resolve } from "node:path";
 import { childEnv, portsFor, worktreeEnv, worldAdminToken } from "./env.mjs";
 import { gitInfo, listWorktrees, samePath, stream, validBranchName } from "./git.mjs";
+import { applyChanges, availableTypes, changesFor, currentType, merge, readLayers, validate, writeLocal } from "./worldtype.mjs";
 
 const LOG_LINES = 3000;
 const POLL_MS = 3000;
@@ -47,6 +48,25 @@ function getJson({ port, path, token, method = "GET", timeout = 1500 }) {
   });
 }
 
+/** POSTs a JSON body to a world settings page. */
+function getJsonBody({ port, path, token, body, timeout = 10_000 }) {
+  return new Promise((done) => {
+    const data = JSON.stringify(body);
+    const req = http.request({
+      host: "127.0.0.1", port, path, method: "POST", agent: false, timeout,
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json", "Content-Length": Buffer.byteLength(data) },
+    }, (res) => {
+      let text = "";
+      res.setEncoding("utf8");
+      res.on("data", (c) => { text += c; });
+      res.on("end", () => { let json = null; try { json = JSON.parse(text); } catch {} done({ status: res.statusCode, json }); });
+    });
+    req.on("timeout", () => req.destroy());
+    req.on("error", () => done({ status: 0, json: null }));
+    req.end(data);
+  });
+}
+
 function killTree(pid) {
   return new Promise((done) => {
     if (process.platform === "win32") execFile("taskkill", ["/pid", String(pid), "/T", "/F"], { windowsHide: true }, () => done());
@@ -78,22 +98,25 @@ function listeningPids(ports) {
 
 /** world.json with world.local.json over it: what the world list shows about this world. */
 export function worldInfo(dir) {
-  const read = (f) => { try { return JSON.parse(readFileSync(join(dir, "server", "data", "definitions", f), "utf8")); } catch { return {}; } };
-  const shipped = read("world.json");
-  const local = read("world.local.json");
-  const world = { ...shipped, ...local, plugins: { ...(shipped.plugins ?? {}), ...(local.plugins ?? {}) } };
-  // Same rule as the server's WorldPluginConfig.isFreeToPlayWorld: the FreeToPlay plugin switch.
-  let f2p = false;
-  for (const [name, entry] of Object.entries(world.plugins)) {
-    if (name.toLowerCase().replace(/[^a-z0-9]/g, "") !== "freetoplay") continue;
-    const v = entry && typeof entry === "object" ? entry.enabled : entry;
-    if (typeof v === "boolean") f2p = v;
+  let world = {};
+  let error = null;
+  try {
+    const { shipped, local } = readLayers(dir);
+    world = merge(shipped, local);
+  } catch (err) {
+    error = `world.local.json: ${err.message}`;
   }
+  const types = availableTypes(dir);
+  const type = currentType(world);
   return {
     name: typeof world.name === "string" && world.name ? world.name : "Old School RuneScape",
     description: typeof world.description === "string" ? world.description : "",
-    members: !f2p,
+    type,
+    typeLabel: types.find((t) => t.id === type)?.label ?? type,
+    types,
+    members: type !== "f2p",
     xp: Number(world.experienceMultiplier) || 1,
+    error,
   };
 }
 
@@ -360,6 +383,49 @@ export class Fleet extends EventEmitter {
     this.log(rec, `[admin] game ${action} requested`);
   }
 
+  /**
+   * Switches the world type. Online: through the world settings page's Apply, which saves players,
+   * writes world.local.json and restarts (with the in-game update countdown when players are on).
+   * Not running, or running with the game stopped: world.local.json is written here, for the next start.
+   */
+  async setWorldType(id, type) {
+    const rec = this.get(id);
+    const fail = (message, status = 409) => { throw Object.assign(new Error(message), { status }); };
+    const label = availableTypes(rec.dir).find((t) => t.id === type)?.label;
+    if (!label) fail("This world's code doesn't have that world type.", 400);
+    const layers = readLayers(rec.dir);
+    if (currentType(merge(layers.shipped, layers.local)) === type) return { result: "unchanged" };
+    const changes = changesFor(type, layers.shipped);
+    const problem = validate(merge(layers.shipped, applyChanges(layers.shipped, layers.local, changes)));
+    if (problem) fail(problem, 400);
+    const status = rec.probe?.serverStatus;
+
+    if (status === "online") {
+      const catalog = await getJson({ port: rec.ports.worldAdmin, path: "/api/catalog", token: rec.token });
+      const localHash = catalog.json?.layers?.localHash;
+      if (catalog.status !== 200 || typeof localHash !== "string") fail("The world settings page didn't answer; try again.");
+      const r = await getJsonBody({ port: rec.ports.worldAdmin, path: "/api/apply", token: rec.token, body: { changes, localHash, seconds: 60 } });
+      if (r.status >= 400 || r.status === 0) fail(r.json?.error ?? r.json?.errors?.join("; ") ?? `World settings refused the change (HTTP ${r.status}).`);
+      const applied = r.json?.applied;
+      this.log(rec, `[admin] world type -> ${label} (${applied})`);
+      return {
+        result: applied,
+        message: applied === "countdown" ? `Players get a ${r.json.seconds}-second update countdown, then World ${300 + (rec.ports.slot ?? 0)} restarts as ${label}.`
+          : applied === "restarting" ? `Restarting as ${label}.`
+          : `Saved. Restart the world to become ${label}.`,
+      };
+    }
+    if (rec.procState === "stopping" || status === "starting" || status === "stopping" || (rec.proc && !status)) {
+      fail("Wait until the world has finished starting or shutting down.");
+    }
+    if (rec.probe?.gameUp && !rec.probe?.panelUp) fail("This world runs without its settings page; shut it down first.");
+    writeLocal(rec.dir, layers, applyChanges(layers.shipped, layers.local, changes));
+    rec.world = worldInfo(rec.dir);
+    this.log(rec, `[admin] world type -> ${label} (saved for the next launch)`);
+    this.emit("state");
+    return { result: "written", message: `Saved. World ${300 + (rec.ports.slot ?? 0)} is ${label} from its next launch.` };
+  }
+
   setFlags(id, { autostart, autorestart }) {
     const rec = this.get(id);
     const k = this.key(rec);
@@ -474,7 +540,7 @@ export class Fleet extends EventEmitter {
       retryAt: rec.retryAt,
       autostart: !!this.settings.autostart[k],
       autorestart: !!this.settings.autorestart[k],
-      world: { ...rec.world, members: rec.probe?.members ?? rec.world?.members ?? true, number: 300 + (rec.ports.slot ?? 0) },
+      world: { ...rec.world, number: 300 + (rec.ports.slot ?? 0) },
       git: rec.git,
       links: {
         client: `http://localhost:${rec.ports.client}`,

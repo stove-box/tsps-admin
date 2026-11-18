@@ -160,6 +160,7 @@ async function handle(req, res) {
   if ((m = /^\/api\/servers\/([\w-]+)\/([\w-]+)$/.exec(url.pathname))) {
     const [, id, action] = m;
     if (action === "flags") { fleet.setFlags(id, body); return send(res, 200, { ok: true }); }
+    if (action === "world-type") return send(res, 200, { ok: true, ...(await fleet.setWorldType(id, String(body.type ?? ""))) });
     const fn = ACTIONS[action];
     if (!fn) return send(res, 404, { error: "Unknown action" });
     fleet.get(id);

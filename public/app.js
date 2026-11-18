@@ -33,9 +33,10 @@ const store = {
   set(k, v) { try { localStorage.setItem(k, v); } catch {} },
 };
 
-function toast(msg) {
+function toast(msg, kind = "error") {
   const el = $("#toast");
   el.textContent = msg;
+  el.className = `toast ${kind}`;
   el.hidden = false;
   clearTimeout(toast.t);
   toast.t = setTimeout(() => (el.hidden = true), 7000);
@@ -147,6 +148,56 @@ function stat(icon, value, label, id) {
   return `<div class="stat osrs"><span class="orb">${icon}</span><div><div class="v"${id ? ` id="${id}"` : ""}>${value}</div><div class="k">${label}</div></div></div>`;
 }
 
+/** The World type tile: a dropdown of the types this world's code has. */
+function typeTile(s) {
+  // A panel process older than world types sends none: show the type without the dropdown.
+  if (!s.world.types?.length) return stat(ICON.crown, s.world.members ? "Members" : "Free-to-play", "World type");
+  const changing = busy.has(`${s.id}:world-type`) || BUSY.has(s.status) || (s.external && !s.panelUp);
+  const groups = new Map();
+  for (const t of s.world.types ?? []) {
+    if (!groups.has(t.group)) groups.set(t.group, []);
+    groups.get(t.group).push(t);
+  }
+  const options = [...groups].map(([group, types]) => `<optgroup label="${esc(group)}">${types.map((t) =>
+    `<option value="${esc(t.id)}" ${t.id === s.world.type ? "selected" : ""}>${esc(t.label)}</option>`).join("")}</optgroup>`).join("");
+  return `
+    <div class="stat osrs type-tile">
+      <span class="orb">${ICON.crown}</span>
+      <div class="type-pick">
+        <label class="k" for="world-type">World type</label>
+        <div class="select-wrap">
+          <select id="world-type" data-world-type ${changing ? "disabled" : ""}
+            title="${changing ? "Wait until the world has finished starting or shutting down" : "Change the world type (restarts the server)"}">${options}</select>
+        </div>
+      </div>
+    </div>`;
+}
+
+async function changeWorldType(select) {
+  const s = current();
+  if (!s) return;
+  const type = select.value;
+  const label = s.world.types.find((t) => t.id === type)?.label ?? type;
+  const n = s.world.number;
+  const online = s.status === "online";
+  const question = online
+    ? `Change World ${n} to ${label}?\n\nThe server restarts to apply it.${s.players ? ` ${s.players} player(s) online get a 60-second update countdown first and are saved.` : ""}`
+    : `Change World ${n} to ${label}?\n\nIt takes effect the next time you launch the world.`;
+  if (!confirm(question)) { select.value = s.world.type; return; }
+  busy.add(`${s.id}:world-type`);
+  renderWorld();
+  try {
+    const r = await post(`/api/servers/${s.id}/world-type`, { type });
+    if (r.message) toast(r.message, "info");
+  } catch (err) {
+    toast(err.message);
+    select.value = s.world.type;
+  } finally {
+    busy.delete(`${s.id}:world-type`);
+    renderWorld();
+  }
+}
+
 function renderWorld() {
   const s = current();
   const el = $("#world");
@@ -160,7 +211,6 @@ function renderWorld() {
   const sync = !g?.upstream ? "No upstream"
     : g.behind ? `<span class="bad">${g.behind} behind</span>${g.ahead ? `, ${g.ahead} ahead` : ""}`
     : g.ahead ? `${g.ahead} ahead` : `<span class="good">Up to date</span>`;
-  const customName = s.world.name && s.world.name !== "Old School RuneScape";
 
   setHtml(el, `
     <div class="hero osrs">
@@ -171,7 +221,7 @@ function renderWorld() {
           <span class="state st-${esc(s.status)}" role="status">${esc(STATUS[s.status] ?? s.status)}</span>
         </div>
         <div class="activity">${esc(activityOf(s))}</div>
-        <div class="worldname">${esc(s.world.name)}${s.world.description ? ` <span class="dim">- ${esc(s.world.description)}</span>` : customName ? "" : ` <span class="dim">- ${s.world.members ? "Members" : "Free"}</span>`}</div>
+        <div class="worldname">${esc(s.world.name)} <span class="dim">- ${esc(s.world.typeLabel ?? (s.world.members ? "Members" : "Free-to-play"))}</span>${s.world.description ? ` <span class="dim">- ${esc(s.world.description)}</span>` : ""}</div>
       </div>
       <div class="hero-actions">${heroActions(s)}</div>
     </div>
@@ -179,7 +229,7 @@ function renderWorld() {
     <div class="stats">
       ${stat(ICON.people, s.status === "online" ? (s.players ?? 0) : "-", "Players online")}
       ${stat(ICON.clock, "-", "Uptime", "uptime")}
-      ${stat(ICON.crown, s.world.members ? "Members" : "Free", "World type")}
+      ${typeTile(s)}
       ${stat(ICON.xp, `x${s.world.xp}`, "XP rate")}
     </div>
     <div class="panels">
@@ -365,6 +415,7 @@ $("#world").addEventListener("click", (e) => {
   if (btn) act(selected, btn.dataset.act, { confirmText: btn.dataset.confirm });
 });
 $("#world").addEventListener("change", (e) => {
+  if (e.target.matches("select[data-world-type]")) return changeWorldType(e.target);
   const flag = e.target.dataset?.flag;
   if (flag && selected) post(`/api/servers/${selected}/flags`, { [flag]: e.target.checked }).catch((err) => toast(err.message));
 });

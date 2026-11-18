@@ -32,6 +32,11 @@ FreeToPlay plugin is off, as in the server), and from the live world once it's o
 - **Restart after a crash** (per world): after an unexpected exit, or a game crash the world settings
   page reports, it restarts after 5 s, 15 s, 30 s, 1 min, 2 min, 5 min and then gives up until you
   launch it again. The count resets after 15 minutes online.
+- **World type** (dropdown): Members, Free-to-play, Hardcore World (on branches that have it) or one of
+  the leagues in `plugins/modes/data/leagues.json`. Online, it goes through the world settings page's
+  Apply: players are saved (with a 60-second update countdown when anyone is on) and the server
+  restarts as the new type. Offline, `world.local.json` is written for the next launch, with the
+  server's own rules (no override left behind, free-to-play needs the spawn in an f2p zone).
 - **Launch when the panel opens** (per world). To open the panel when you sign in to Windows, run
   `powershell -File scripts/install-startup.ps1` (`-Remove` undoes it).
 - **Game update**: branch, upstream, ahead/behind, uncommitted files and last commit. **Check for
