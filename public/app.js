@@ -217,9 +217,10 @@ function heroActions(s) {
 }
 
 /**
- * The banner under the world heading while the world goes down or comes back: the in-game update
- * countdown ("System update in: 0:47", as the game shows it), a shutdown, restart or launch step by
- * step with a running clock, or the wait before an automatic restart after a crash.
+ * While the world goes down or comes back, this one-line strip takes the stat tiles' place (same
+ * height, so the page never grows): the in-game update countdown ("System update in: 0:47", as the
+ * game shows it), a shutdown, restart or launch step by step with a running clock, or the wait
+ * before an automatic restart after a crash. The longer explanation is the strip's tooltip.
  */
 function transitionBanner(s) {
   const n = s.world.number;
@@ -229,11 +230,9 @@ function transitionBanner(s) {
       ? `World ${n} restarts to apply its new settings. Players are saved first.`
       : `An update was started in game. World ${n} restarts when it reaches 0:00; players are saved first.`;
     return `
-      <div class="transit update" role="status">
-        <div class="tr-main">
-          <div class="tr-title">System update in: <span class="tr-clock" data-until="${cd.endsAt}"></span></div>
-          <div class="tr-sub">${esc(why)}</div>
-        </div>
+      <div class="transit update" role="status" title="${esc(why)}">
+        <div class="tr-title">System update in: <span class="tr-clock" data-until="${cd.endsAt}"></span></div>
+        <div class="tr-note">${cd.reason === "settings" ? "Restarting for the new world settings" : "Update started in game"}</div>
         <button type="button" class="stone" ${busy.has(`${s.id}:cancel-update`) ? "disabled" : ""} data-act="cancel-update">Cancel</button>
         <div class="tr-bar"><span data-bar-until="${cd.endsAt}" data-total="${(cd.total || 60) * 1000}"></span></div>
       </div>`;
@@ -252,23 +251,18 @@ function transitionBanner(s) {
       ? `If saving takes longer than ${clock(t.deadline - t.startedAt)}, the server is stopped anyway.`
       : t.phase === "starting" ? "Usually ready in under a minute; the console below shows progress." : "";
     return `
-      <div class="transit ${esc(t.kind)}" role="status">
-        <div class="tr-main">
-          <div class="tr-title">${title} World ${n} <span class="tr-clock" data-since="${t.startedAt}"></span></div>
-          <ol class="tr-steps">${steps.map(([label], i) =>
-            `<li class="${i < at ? "done" : i === at ? "now" : ""}">${esc(label)}</li>`).join("")}</ol>
-          ${sub ? `<div class="tr-sub">${esc(sub)}</div>` : ""}
-        </div>
+      <div class="transit ${esc(t.kind)}" role="status" ${sub ? `title="${esc(sub)}"` : ""}>
+        <div class="tr-title">${title} World ${n} <span class="tr-clock" data-since="${t.startedAt}"></span></div>
+        <ol class="tr-steps">${steps.map(([label], i) =>
+          `<li class="${i < at ? "done" : i === at ? "now" : ""}">${esc(label)}</li>`).join("")}</ol>
         <div class="tr-bar busy"><span></span></div>
       </div>`;
   }
   if (s.retryAt && s.retryAt > Date.now()) {
     return `
-      <div class="transit restart" role="status">
-        <div class="tr-main">
-          <div class="tr-title">Restarting after a crash in <span class="tr-clock" data-until="${s.retryAt}"></span></div>
-          <div class="tr-sub">Restart after a crash is on for World ${n}. Shut down stops it from trying again.</div>
-        </div>
+      <div class="transit restart" role="status" title="Restart after a crash is on for World ${n}. Shut down stops it from trying again.">
+        <div class="tr-title">Restarting after a crash in <span class="tr-clock" data-until="${s.retryAt}"></span></div>
+        <div class="tr-note">Shut down to stop it trying again</div>
       </div>`;
   }
   return "";
@@ -286,7 +280,7 @@ function tickTimers() {
 }
 
 function banners(s) {
-  const out = [transitionBanner(s)];
+  const out = [];
   if (s.external) out.push(`<div class="banner info">This world was launched from a terminal, so its console is there. Shut down still saves players first.</div>`);
   // While the crash restart counts down, its banner already says so.
   const waiting = s.retryAt && s.retryAt > Date.now();
@@ -480,12 +474,13 @@ function renderWorld() {
       <div class="hero-actions">${heroActions(s)}</div>
     </div>
     ${banners(s)}
+    ${transitionBanner(s) || `
     <div class="stats">
       ${stat(ICON.people, s.status === "online" ? (s.players ?? 0) : "-", "Players online")}
       ${!running(s) && lastExit ? stat(ICON.clock, lastExit, "Last shut down") : stat(ICON.clock, "-", "Uptime", "uptime")}
       ${stat(ICON.xp, `x${s.world.xp}`, "XP rate")}
       ${stat(ICON.crown, s.managed ? "This panel" : s.external ? "A terminal" : "-", "Launched by")}
-    </div>
+    </div>`}
     <div class="panels">
       <section class="panel osrs">
         <h2 class="rs-title">Connection</h2>
