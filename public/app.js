@@ -123,7 +123,25 @@ function shutdownQuestion(s) {
   };
 }
 
-const QUESTIONS = { stop: shutdownQuestion };
+/** What the Restart button asks, laid out like the World type change: intro, a card of the steps, a note. */
+function restartQuestion(s) {
+  const n = s.world.number;
+  const save = s.status === "online" && s.players ? `Save ${s.players} player${s.players === 1 ? "" : "s"}` : "Save players";
+  const step = (text, cls = "from") => `<span class="${cls}"><span>${esc(text)}</span></span>`;
+  const arrow = `<span class="arrow" aria-hidden="true">&rarr;</span>`;
+  return {
+    title: `Restart World ${n}?`,
+    text: "The world shuts down and comes straight back up.",
+    card: `<div class="type-change">${step(save)}${arrow}${step("Shut down")}${arrow}${step("Start up", "to")}</div>`,
+    note: s.status === "online" && s.players
+      ? "Players are disconnected while it restarts, usually for under a minute."
+      : "Usually back online in under a minute.",
+    yes: "Restart",
+    no: "Cancel",
+  };
+}
+
+const QUESTIONS = { stop: shutdownQuestion, restart: restartQuestion };
 
 async function act(id, action, { ask, body } = {}) {
   if (ask && !(await askConfirm(ask))) return;
@@ -290,7 +308,7 @@ function heroActions(s) {
     const act = s.managed ? "restart" : "game-restart";
     second = stopping || !(s.managed || s.panelUp)
       ? off(ICON.restart, "Restart", stopping ? "World is shutting down" : "Restart it from the terminal it was launched in")
-      : `<button type="button" class="stone" ${b(act)} data-act="${act}" title="Save players and restart World ${n}">${ICON.restart}Restart</button>`;
+      : `<button type="button" class="stone" ${b(act)} data-act="${act}" data-confirm="restart" title="Save players and restart World ${n}">${ICON.restart}Restart</button>`;
   }
   const settings = s.links.worldAdmin && s.panelUp
     ? `<a class="stone" href="${esc(s.links.worldAdmin)}" target="_blank" rel="noopener" title="Open World ${n}'s settings page">${ICON.settings}Settings</a>`
