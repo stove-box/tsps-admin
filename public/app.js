@@ -76,8 +76,41 @@ async function post(path, body = {}) {
   return json;
 }
 
-async function act(id, action, { confirmText, body } = {}) {
-  if (confirmText && !confirm(confirmText)) return;
+/**
+ * The panel's own "Are you sure?" dialog (stone, RuneScape title, Yes / No) instead of the browser's
+ * confirm(). Focus starts on No, so a stray Enter doesn't do the thing; Escape also says no.
+ * Resolves to true only for Yes.
+ */
+function askConfirm({ title, text, yes = "Yes", no = "No", danger = false }) {
+  const d = $("#confirm-dialog");
+  $("#confirm-title").textContent = title;
+  $("#confirm-text").textContent = text;
+  $("#confirm-yes").textContent = yes;
+  $("#confirm-yes").className = `stone ${danger ? "red" : "gold"}`;
+  $("#confirm-no").textContent = no;
+  d.returnValue = "";
+  d.showModal();
+  $("#confirm-no").focus();
+  return new Promise((resolve) => d.addEventListener("close", () => resolve(d.returnValue === "yes"), { once: true }));
+}
+
+/** What the Shut down button asks, worded for this world as it is now. */
+function shutdownQuestion(s) {
+  const n = s.world.number;
+  const players = s.status === "online" && s.players ? `The ${s.players} player${s.players === 1 ? "" : "s"} online ${s.players === 1 ? "is" : "are"} saved first,` : "Anyone online is saved first,";
+  return {
+    title: `Shut down World ${n}?`,
+    text: `${players} then the world goes offline.${s.external ? " It was launched from a terminal, so its processes there are ended too." : ""}`,
+    yes: "Yes, shut down",
+    no: "No",
+    danger: true,
+  };
+}
+
+const QUESTIONS = { stop: shutdownQuestion };
+
+async function act(id, action, { ask, body } = {}) {
+  if (ask && !(await askConfirm(ask))) return;
   const key = `${id}:${action}`;
   busy.add(key);
   renderWorld();
@@ -223,13 +256,8 @@ function heroActions(s) {
   // Three buttons of one size under Play, always in the same places: power, restart, settings.
   // One that can't be used now stays, greyed, with a tooltip saying why.
   const off = (icon, label, why) => `<button type="button" class="stone" disabled title="${esc(why)}">${icon}${label}</button>`;
-  const shutDown = () => {
-    const confirmText = s.external
-      ? `Shut down World ${n}? It was launched from a terminal: online players are saved, then the processes on its ports are ended.`
-      : `Shut down World ${n}? Online players are saved first.`;
-    return `<button type="button" class="stone red" ${stopping ? "disabled" : b("stop")} data-act="stop" data-confirm="${esc(confirmText)}"
+  const shutDown = () => `<button type="button" class="stone red" ${stopping ? "disabled" : b("stop")} data-act="stop" data-confirm="stop"
       title="Save players and stop World ${n}">${ICON.power}${stopping ? "Stopping" : "Shut down"}</button>`;
-  };
   const gameDown = running(s) && (s.status === "game-stopped" || s.status === "failed");
 
   let first;
@@ -474,10 +502,15 @@ async function changeWorldType(type) {
   const label = s.world.types.find((t) => t.id === type)?.label ?? type;
   const n = s.world.number;
   const online = s.status === "online";
-  const question = online
-    ? `Change World ${n} to ${label}?\n\nThe server restarts to apply it.${s.players ? ` ${s.players} player(s) online get a 60-second update countdown first and are saved.` : ""}`
-    : `Change World ${n} to ${label}?\n\nIt takes effect the next time you launch the world.`;
-  if (!confirm(question)) return;
+  const ok = await askConfirm({
+    title: `Change World ${n} to ${label}?`,
+    text: !online ? "It takes effect the next time you launch the world."
+      : s.players ? `The server restarts to apply it. The ${s.players} player${s.players === 1 ? "" : "s"} online get a 60-second update countdown first and are saved.`
+      : "The server restarts to apply it.",
+    yes: "Yes, change it",
+    no: "No",
+  });
+  if (!ok) return;
   busy.add(`${s.id}:world-type`);
   renderWorld();
   try {
@@ -721,7 +754,10 @@ $("#world").addEventListener("click", (e) => {
       .catch(() => toast("Couldn't copy; select the address and copy it by hand."));
   }
   const btn = e.target.closest("button[data-act]");
-  if (btn) act(selected, btn.dataset.act, { confirmText: btn.dataset.confirm });
+  if (btn) {
+    const question = QUESTIONS[btn.dataset.confirm];
+    act(selected, btn.dataset.act, { ask: question && current() ? question(current()) : null });
+  }
 });
 $("#world").addEventListener("keydown", (e) => {
   if (e.target.closest("button[data-type-menu]") && (e.key === "ArrowDown" || e.key === "ArrowUp")) {

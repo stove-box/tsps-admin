@@ -96,6 +96,18 @@
   </form>
 </dialog>
 
+<!-- "Are you sure?" in the game's style: replaces the browser's confirm() box. -->
+<dialog id="confirm-dialog" class="osrs-dialog confirm-dialog" aria-labelledby="confirm-title" aria-describedby="confirm-text">
+  <form method="dialog">
+    <h2 class="rs-title" id="confirm-title"></h2>
+    <p id="confirm-text"></p>
+    <div class="confirm-actions">
+      <button value="yes" id="confirm-yes" class="stone red"></button>
+      <button value="no" id="confirm-no" class="stone"></button>
+    </div>
+  </form>
+</dialog>
+
 <dialog id="remove-dialog" class="osrs-dialog danger">
   <form method="dialog" id="remove-form">
     <h2 class="rs-title" id="remove-title">Remove world</h2>

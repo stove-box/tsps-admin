@@ -403,3 +403,11 @@ button.stone.icon svg { width: 18px; height: 18px; }
 @media (max-width: 920px) {
   .hero-actions { width: 100%; }
 }
+
+/* "Are you sure?" dialog: the game's centred prompt, title, one line, Yes / No */
+.confirm-dialog { width: min(400px, calc(100vw - 32px)); }
+.confirm-dialog form { gap: 12px; padding: 20px 22px 18px; text-align: center; }
+.confirm-dialog .rs-title { font-size: 16px; color: var(--rs-orange); }
+.confirm-dialog p { font: 16px/1.35 var(--rs); color: #e8dcc0; text-shadow: 1px 1px 0 #000; }
+.confirm-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 4px; }
+.confirm-actions .stone { width: 100%; }
