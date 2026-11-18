@@ -692,7 +692,7 @@ function newWorldPlan(branch) {
   let slot = 1;
   while (used.has(slot) && slot < 99) slot++;
   const main = (state.repo ?? "tsps").split(/[\\/]/).pop();
-  return { number: 300 + slot, folder: `${main}-${branch.replace(/\//g, "-")}` };
+  return { number: 1 + slot, folder: `${main}-${branch.replace(/\//g, "-")}` };
 }
 
 let pendingWorld = null; // { folder, number, task } until the new world shows up in the list

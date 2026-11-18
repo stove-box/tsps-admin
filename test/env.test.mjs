@@ -135,3 +135,10 @@ test("transitions: a restart stays on screen until the world is back online, and
   assert.equal(rec.transition.kind, "restart");
   assert.equal(rec.transition.players, 2);
 });
+
+test("worlds are numbered from 1: the main checkout, then each slot", async () => {
+  const { worldNumber } = await import("../src/fleet.mjs");
+  assert.equal(worldNumber({ ports: { slot: null } }), 1);
+  assert.equal(worldNumber({ ports: { slot: 1 } }), 2);
+  assert.equal(worldNumber({ ports: { slot: 5 } }), 6);
+});

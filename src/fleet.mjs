@@ -129,6 +129,9 @@ export function failureLine(lines) {
   return clean.length > 160 ? clean.slice(0, 157) + "..." : clean;
 }
 
+/** A world's number: World 1 is the main checkout, then each worktree slot counts on from there. */
+export const worldNumber = (rec) => 1 + (rec.ports?.slot ?? 0);
+
 const slug = (dir) => basename(dir).toLowerCase().replace(/[^a-z0-9-]+/g, "-");
 
 export class Fleet extends EventEmitter {
@@ -503,7 +506,7 @@ export class Fleet extends EventEmitter {
       this.log(rec, `[admin] world type -> ${label} (${applied})`);
       return {
         result: applied,
-        message: applied === "countdown" ? `Players get a ${r.json.seconds}-second update countdown, then World ${300 + (rec.ports.slot ?? 0)} restarts as ${label}.`
+        message: applied === "countdown" ? `Players get a ${r.json.seconds}-second update countdown, then World ${worldNumber(rec)} restarts as ${label}.`
           : applied === "restarting" ? `Restarting as ${label}.`
           : `Saved. Restart the world to become ${label}.`,
       };
@@ -516,7 +519,7 @@ export class Fleet extends EventEmitter {
     rec.world = worldInfo(rec.dir);
     this.log(rec, `[admin] world type -> ${label} (saved for the next launch)`);
     this.emit("state");
-    return { result: "written", message: `Saved. World ${300 + (rec.ports.slot ?? 0)} is ${label} from its next launch.` };
+    return { result: "written", message: `Saved. World ${worldNumber(rec)} is ${label} from its next launch.` };
   }
 
   setFlags(id, { autostart, autorestart }) {
@@ -546,7 +549,7 @@ export class Fleet extends EventEmitter {
 
   /**
    * A background job the page lists under Recent jobs. `meta`: { kind, title, detail } in plain words
-   * ("Update World 300", "main"). `fn(onLine, job)` returns the exit code and may set `job.summary`,
+   * ("Update World 1", "main"). `fn(onLine, job)` returns the exit code and may set `job.summary`,
    * the one line shown when it finishes; otherwise a failure shows its last error line.
    */
   task(meta, fn) {
@@ -597,7 +600,7 @@ export class Fleet extends EventEmitter {
   pull(id) {
     const rec = this.get(id);
     if (!rec.git?.upstream) throw Object.assign(new Error("This branch has no upstream to pull from."), { status: 409 });
-    const n = 300 + (rec.ports.slot ?? 0);
+    const n = worldNumber(rec);
     return this.task({ kind: "update", title: `Update World ${n}`, detail: rec.branch }, async (onLine, job) => {
       const code = await stream("git", ["-C", rec.dir, "pull", "--ff-only"], { onLine });
       rec.gitAt = 0;
@@ -624,7 +627,7 @@ export class Fleet extends EventEmitter {
       if (code !== 0) return code;
       await this.refresh();
       const rec = [...this.servers.values()].find((r) => samePath(r.dir, dir));
-      const n = rec ? 300 + (rec.ports.slot ?? 0) : null;
+      const n = rec ? worldNumber(rec) : null;
       const world = n ? `World ${n}` : "The world";
       if (n) job.title = `Create World ${n}`;
       job.summary = `${world} is ready`;
@@ -653,7 +656,7 @@ export class Fleet extends EventEmitter {
     if (rec.proc || rec.probe?.gameUp || rec.probe?.panelUp) throw Object.assign(new Error("Shut the world down first."), { status: 409 });
     await this.refreshGit(rec);
     const dir = rec.dir.replace(/\\/g, "/");
-    const meta = { kind: "remove", title: `Remove World ${300 + (rec.ports.slot ?? 0)}`, detail: rec.branch ?? basename(rec.dir) };
+    const meta = { kind: "remove", title: `Remove World ${worldNumber(rec)}`, detail: rec.branch ?? basename(rec.dir) };
     const kept = `Removed; branch ${meta.detail} kept`;
     if (!rec.git?.dirty) {
       return this.task(meta, async (onLine, job) => {
@@ -701,7 +704,7 @@ export class Fleet extends EventEmitter {
       countdown: rec.probe?.countdown ?? null,
       autostart: !!this.settings.autostart[k],
       autorestart: !!this.settings.autorestart[k],
-      world: { ...rec.world, number: 300 + (rec.ports.slot ?? 0) },
+      world: { ...rec.world, number: worldNumber(rec) },
       git: rec.git,
       links: {
         client: `http://localhost:${rec.ports.client}`,

@@ -13,8 +13,8 @@ get a new one).
 
 ## Worlds
 
-Each checkout is a world. Its number is 300 + its `scripts/wt` slot (the main checkout is World 300,
-slot 2 is World 302); its activity is the branch. Name, description, members/free and XP rate come
+Each checkout is a world. Its number is 1 + its `scripts/wt` slot (the main checkout is World 1, slot 1
+is World 2, slot 2 is World 3). Name, description, members/free and XP rate come
 from its `server/data/definitions/world.json` with `world.local.json` over it (members while the
 FreeToPlay plugin is off, as in the server), and from the live world once it's online.
 
