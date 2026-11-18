@@ -35,8 +35,9 @@ FreeToPlay plugin is off, as in the server), and from the live world once it's o
 - **World icons** follow the game's World Switcher (oldschool.runescape.wiki/w/World), using the
   wiki's sprites: the members star (`public/members-world.png`), the free-to-play star
   (`public/free-world.png`), the members star turned green for Leagues, and the Hardcore Worlds icon
-  (`public/hardcore-world.png`). A legend sits under the list.
-- **World type** (dropdown): Members, Free-to-play, Hardcore World (on branches that have it) or one of
+  (`public/hardcore-world.png`). The World Switcher's Activity column shows the world type; hover a row
+  for its branch.
+- **World type** (dropdown in the world heading, each type with its icon): Members, Free-to-play, Hardcore World (on branches that have it) or one of
   the leagues in `plugins/modes/data/leagues.json`. Online, it goes through the world settings page's
   Apply: players are saved (with a 60-second update countdown when anyone is on) and the server
   restarts as the new type. Offline, `world.local.json` is written for the next launch, with the

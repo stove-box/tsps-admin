@@ -40,13 +40,9 @@ function worldIcon(world) {
   return `<img class="star sprite ${k.kind}" src="${sprite.src}" width="${sprite.size}" height="${sprite.size}" alt="${esc(label)} world" title="${esc(label)}">`;
 }
 
-/** The legend under the World Switcher: every icon, so a League or Hardcore world is recognisable on sight. */
-const LEGEND = [
-  [{ type: "members" }, "Members"],
-  [{ type: "f2p", members: false }, "Free"],
-  [{ type: "league:0", typeLabel: "League" }, "League"],
-  [{ type: "hardcore" }, "Hardcore"],
-].map(([world, text]) => `<span class="legend-item">${worldIcon(world)}${text}</span>`).join("");
+/** The world type as the list's Activity column shows it: "Leagues VI - Demonic Pacts" becomes "Leagues VI". */
+const typeName = (world) => world.typeLabel ?? (world.members === false ? "Free-to-play" : "Members");
+const shortType = (world) => typeName(world).replace(/\s+-\s+.*$/, "");
 const ICON = {
   power: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v9" /><path d="M6.3 6.3a8 8 0 1 0 11.4 0" /></svg>',
   restart: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.3-5.7M20 4v5h-5" /></svg>',
@@ -116,18 +112,17 @@ function renderSwitcher() {
       : BUSY.has(s.status) ? "..." : s.status === "failed" ? "CRASH" : "OFF";
     return `
     <button type="button" class="world-row ${off ? "is-offline" : ""} ${BUSY.has(s.status) ? "is-busy" : ""}" data-id="${esc(s.id)}"
-      ${s.id === selected ? 'aria-current="true"' : ""} title="World ${s.world.number}: ${esc(STATUS[s.status] ?? s.status)}">
+      ${s.id === selected ? 'aria-current="true"' : ""} title="World ${s.world.number}: ${esc(typeName(s.world))}, ${esc(STATUS[s.status] ?? s.status)} (branch ${esc(activityOf(s))})">
       ${worldIcon(s.world)}
       <span class="num">${s.world.number}</span>
       <span class="count">${count}</span>
-      <span class="activity">${esc(activityOf(s))}</span>
+      <span class="activity">${esc(shortType(s.world))}</span>
     </button>`;
   }).join("") || `<p class="rs" style="margin:6px;color:#e8dcc0">No worlds yet. Create one.</p>`);
 
   const online = state.servers.filter((s) => s.status === "online");
   const players = online.reduce((n, s) => n + (s.players ?? 0), 0);
   setHtml($("#total"), `<b>${players}</b> players on <b>${online.length}</b> of ${state.servers.length} worlds`);
-  setHtml($("#legend"), LEGEND);
 
   const jobs = state.tasks ?? [];
   $("#jobs-wrap").hidden = jobs.length === 0;
@@ -180,42 +175,129 @@ function stat(icon, value, label, id) {
   return `<div class="stat osrs"><span class="orb">${icon}</span><div><div class="v"${id ? ` id="${id}"` : ""}>${value}</div><div class="k">${label}</div></div></div>`;
 }
 
-/** The World type tile: a dropdown of the types this world's code has. */
-function typeTile(s) {
+/** The World type dropdown's button, in the world heading. Its list is #type-menu. */
+function typePicker(s) {
+  const label = `<span class="type-label">${esc(typeName(s.world))}</span>`;
   // A panel process older than world types sends none: show the type without the dropdown.
-  if (!s.world.types?.length) return stat(ICON.crown, s.world.members ? "Members" : "Free-to-play", "World type");
+  if (!s.world.types?.length) return `<div class="type-pick"><span class="type-static">${worldIcon(s.world)}${label}</span></div>`;
   const changing = busy.has(`${s.id}:world-type`) || BUSY.has(s.status) || (s.external && !s.panelUp);
-  const groups = new Map();
-  for (const t of s.world.types ?? []) {
-    if (!groups.has(t.group)) groups.set(t.group, []);
-    groups.get(t.group).push(t);
-  }
-  const options = [...groups].map(([group, types]) => `<optgroup label="${esc(group)}">${types.map((t) =>
-    `<option value="${esc(t.id)}" ${t.id === s.world.type ? "selected" : ""}>${esc(t.label)}</option>`).join("")}</optgroup>`).join("");
   return `
-    <div class="stat osrs type-tile">
-      <span class="orb">${ICON.crown}</span>
-      <div class="type-pick">
-        <label class="k" for="world-type">World type</label>
-        <div class="select-wrap">
-          <select id="world-type" data-world-type ${changing ? "disabled" : ""}
-            title="${changing ? "Wait until the world has finished starting or shutting down" : "Change the world type (restarts the server)"}">${options}</select>
-        </div>
-      </div>
+    <div class="type-pick">
+      <button type="button" id="type-select" class="type-select" data-type-menu aria-haspopup="listbox" aria-label="World type: ${esc(typeName(s.world))}"
+        aria-expanded="${menuFor === s.id}" aria-controls="type-menu" ${changing ? "disabled" : ""}
+        title="${changing ? "Wait until the world has finished starting or shutting down" : "Change the world type (restarts the server)"}">
+        ${worldIcon(s.world)}${label}<span class="caret" aria-hidden="true"></span>
+      </button>
     </div>`;
 }
 
-async function changeWorldType(select) {
+// ---- World type dropdown (a listbox, so each type can show its world icon) ----
+
+const menu = $("#type-menu");
+let menuFor = null; // the world whose types the open list shows
+let menuIndex = 0;
+const menuOptions = () => [...menu.querySelectorAll("[role=option]")];
+
+function openTypeMenu() {
+  const s = current();
+  const trigger = $("#type-select");
+  if (!s || !trigger || trigger.disabled) return;
+  const groups = new Map();
+  for (const t of s.world.types) {
+    if (!groups.has(t.group)) groups.set(t.group, []);
+    groups.get(t.group).push(t);
+  }
+  let i = 0;
+  menu.innerHTML = [...groups].map(([group, types]) => `
+    <div class="menu-group" role="group" aria-label="${esc(group)}">
+      <div class="menu-label" aria-hidden="true">${esc(group)}</div>
+      ${types.map((t) => `
+        <div class="menu-opt" role="option" id="type-opt-${i++}" data-type="${esc(t.id)}" aria-selected="${t.id === s.world.type}">
+          ${worldIcon({ type: t.id, typeLabel: t.label, members: t.id !== "f2p" })}<span>${esc(t.label)}</span>
+        </div>`).join("")}
+    </div>`).join("");
+  menuFor = s.id;
+  menuIndex = Math.max(0, menuOptions().findIndex((o) => o.dataset.type === s.world.type));
+  menu.hidden = false;
+  trigger.setAttribute("aria-expanded", "true");
+  positionMenu();
+  highlight();
+  menu.focus();
+}
+
+function positionMenu() {
+  const trigger = $("#type-select");
+  if (!trigger || menu.hidden) return closeTypeMenu();
+  const r = trigger.getBoundingClientRect();
+  menu.style.minWidth = `${Math.max(r.width, 260)}px`;
+  const h = menu.offsetHeight;
+  const w = menu.offsetWidth;
+  const below = window.innerHeight - r.bottom;
+  menu.style.top = `${below < h + 8 && r.top > h + 8 ? r.top - h - 4 : r.bottom + 4}px`;
+  menu.style.left = `${Math.max(8, Math.min(r.left, window.innerWidth - w - 8))}px`;
+}
+
+function closeTypeMenu(refocus = false) {
+  if (menu.hidden) return;
+  menu.hidden = true;
+  menuFor = null;
+  const trigger = $("#type-select");
+  trigger?.setAttribute("aria-expanded", "false");
+  if (refocus) trigger?.focus();
+}
+
+function highlight() {
+  const opts = menuOptions();
+  opts.forEach((o, i) => o.classList.toggle("active", i === menuIndex));
+  if (opts[menuIndex]) {
+    menu.setAttribute("aria-activedescendant", opts[menuIndex].id);
+    opts[menuIndex].scrollIntoView({ block: "nearest" });
+  }
+}
+
+function chooseType(type) {
+  const s = current();
+  closeTypeMenu(true);
+  if (s && type && type !== s.world.type) changeWorldType(type);
+}
+
+menu.addEventListener("keydown", (e) => {
+  const opts = menuOptions();
+  const move = { ArrowDown: 1, ArrowUp: -1 }[e.key];
+  if (move) menuIndex = (menuIndex + move + opts.length) % opts.length;
+  else if (e.key === "Home") menuIndex = 0;
+  else if (e.key === "End") menuIndex = opts.length - 1;
+  else if (e.key === "Enter" || e.key === " ") return e.preventDefault(), chooseType(opts[menuIndex]?.dataset.type);
+  else if (e.key === "Escape") return e.preventDefault(), closeTypeMenu(true);
+  else if (e.key === "Tab") return closeTypeMenu();
+  else return;
+  e.preventDefault();
+  highlight();
+});
+menu.addEventListener("mousemove", (e) => {
+  const i = menuOptions().indexOf(e.target.closest("[role=option]"));
+  if (i >= 0 && i !== menuIndex) { menuIndex = i; highlight(); }
+});
+menu.addEventListener("click", (e) => {
+  const opt = e.target.closest("[role=option]");
+  if (opt) chooseType(opt.dataset.type);
+});
+document.addEventListener("mousedown", (e) => {
+  if (!menu.hidden && !menu.contains(e.target) && !e.target.closest("[data-type-menu]")) closeTypeMenu();
+});
+window.addEventListener("resize", () => closeTypeMenu());
+document.addEventListener("scroll", () => positionMenu(), true);
+
+async function changeWorldType(type) {
   const s = current();
   if (!s) return;
-  const type = select.value;
   const label = s.world.types.find((t) => t.id === type)?.label ?? type;
   const n = s.world.number;
   const online = s.status === "online";
   const question = online
     ? `Change World ${n} to ${label}?\n\nThe server restarts to apply it.${s.players ? ` ${s.players} player(s) online get a 60-second update countdown first and are saved.` : ""}`
     : `Change World ${n} to ${label}?\n\nIt takes effect the next time you launch the world.`;
-  if (!confirm(question)) { select.value = s.world.type; return; }
+  if (!confirm(question)) return;
   busy.add(`${s.id}:world-type`);
   renderWorld();
   try {
@@ -223,7 +305,6 @@ async function changeWorldType(select) {
     if (r.message) toast(r.message, "info");
   } catch (err) {
     toast(err.message);
-    select.value = s.world.type;
   } finally {
     busy.delete(`${s.id}:world-type`);
     renderWorld();
@@ -237,46 +318,33 @@ function renderWorld() {
   const b = (a) => (busy.has(`${s.id}:${a}`) ? "disabled" : "");
   const g = s.git;
   const p = s.ports;
-  const exit = s.lastExit
-    ? `${s.lastExit.requested ? "Shut down" : "Exited"} ${new Date(s.lastExit.at).toLocaleTimeString()}`
-    : "-";
+  const lastExit = s.lastExit ? new Date(s.lastExit.at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) : null;
   const sync = !g?.upstream ? "No upstream"
     : g.behind ? `<span class="bad">${g.behind} behind</span>${g.ahead ? `, ${g.ahead} ahead` : ""}`
     : g.ahead ? `${g.ahead} ahead` : `<span class="good">Up to date</span>`;
 
   setHtml(el, `
     <div class="hero osrs">
-      <div>
+      <div class="hero-main">
         <div class="hero-name">
           ${worldIcon(s.world)}
           <h1>World ${s.world.number}</h1>
           <span class="state st-${esc(s.status)}" role="status">${esc(STATUS[s.status] ?? s.status)}</span>
         </div>
-        <div class="activity">${esc(activityOf(s))}</div>
-        <div class="worldname">${esc(s.world.name)} <span class="dim">- ${esc(s.world.typeLabel ?? (s.world.members ? "Members" : "Free-to-play"))}</span>${s.world.description ? ` <span class="dim">- ${esc(s.world.description)}</span>` : ""}</div>
+        ${typePicker(s)}
+        <div class="worldname">${esc(s.world.name)}${s.world.description ? ` <span class="dim">- ${esc(s.world.description)}</span>` : ""}
+          <span class="dim">- branch</span> <span class="branch">${esc(activityOf(s))}</span></div>
       </div>
       <div class="hero-actions">${heroActions(s)}</div>
     </div>
     ${banners(s)}
     <div class="stats">
       ${stat(ICON.people, s.status === "online" ? (s.players ?? 0) : "-", "Players online")}
-      ${stat(ICON.clock, "-", "Uptime", "uptime")}
-      ${typeTile(s)}
+      ${!running(s) && lastExit ? stat(ICON.clock, lastExit, "Last shut down") : stat(ICON.clock, "-", "Uptime", "uptime")}
       ${stat(ICON.xp, `x${s.world.xp}`, "XP rate")}
+      ${stat(ICON.crown, s.managed ? "This panel" : s.external ? "A terminal" : "-", "Launched by")}
     </div>
     <div class="panels">
-      <section class="panel osrs">
-        <h2 class="rs-title">World info</h2>
-        <dl class="kv">
-          <dt>Status</dt><dd class="y">${esc(STATUS[s.status] ?? s.status)}</dd>
-          <dt>Launched by</dt><dd>${s.managed ? "This panel" : s.external ? "A terminal" : "-"}</dd>
-          <dt>Last shutdown</dt><dd>${exit}</dd>
-          <dt>Folder</dt><dd>${esc(folderOf(s))}</dd>
-        </dl>
-        <div class="links">
-          ${s.links.worldAdmin && s.panelUp ? `<a class="stone" href="${esc(s.links.worldAdmin)}" target="_blank" rel="noopener">${ICON.settings}World settings</a>` : ""}
-        </div>
-      </section>
       <section class="panel osrs">
         <h2 class="rs-title">Connection</h2>
         <dl class="kv">
@@ -285,7 +353,9 @@ function renderWorld() {
           <dt>World settings</dt><dd>${p.worldAdmin}</dd>
           <dt>Agent MCP</dt><dd>${p.mcp}</dd>
           <dt>Gateway</dt><dd>${p.gateway}</dd>
+          <dt>Folder</dt><dd>${esc(folderOf(s))}</dd>
         </dl>
+        ${s.links.worldAdmin && s.panelUp ? `<div class="links"><a class="stone" href="${esc(s.links.worldAdmin)}" target="_blank" rel="noopener">${ICON.settings}World settings</a></div>` : ""}
       </section>
       <section class="panel osrs">
         <h2 class="rs-title">Game update</h2>
@@ -318,6 +388,8 @@ function renderWorld() {
         title="${running(s) ? "Shut the world down first" : "Remove this world"}">${ICON.trash}Remove world</button>
     </div>`}`);
   tickUptime();
+  if (menuFor && menuFor !== s.id) closeTypeMenu();
+  else positionMenu();
 }
 
 function tickUptime() {
@@ -443,11 +515,17 @@ $("#world-list").addEventListener("click", (e) => {
 $("#world").addEventListener("click", (e) => {
   if (!selected) return;
   if (e.target.closest("button[data-remove]")) return openRemove();
+  if (e.target.closest("button[data-type-menu]")) return menu.hidden ? openTypeMenu() : closeTypeMenu(true);
   const btn = e.target.closest("button[data-act]");
   if (btn) act(selected, btn.dataset.act, { confirmText: btn.dataset.confirm });
 });
+$("#world").addEventListener("keydown", (e) => {
+  if (e.target.closest("button[data-type-menu]") && (e.key === "ArrowDown" || e.key === "ArrowUp")) {
+    e.preventDefault();
+    openTypeMenu();
+  }
+});
 $("#world").addEventListener("change", (e) => {
-  if (e.target.matches("select[data-world-type]")) return changeWorldType(e.target);
   const flag = e.target.dataset?.flag;
   if (flag && selected) post(`/api/servers/${selected}/flags`, { [flag]: e.target.checked }).catch((err) => toast(err.message));
 });

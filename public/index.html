@@ -39,9 +39,7 @@
         <span></span><span>World</span><span>Players</span><span>Activity</span>
       </div>
       <nav id="world-list" class="world-list"></nav>
-      <div class="switcher-foot rs" id="total"></div>
-      <div class="legend rs" id="legend" aria-label="World types"></div>
-    </div>
+      <div class="switcher-foot rs" id="total"></div>    </div>
 
     <div id="jobs-wrap" class="jobs-wrap" hidden>
       <h2 class="side-label">Recent jobs</h2>
@@ -98,6 +96,9 @@
     </div>
   </form>
 </dialog>
+
+<!-- The World type dropdown's list: outside #world so the 3 s redraw can't close it or steal focus. -->
+<div id="type-menu" class="type-menu" role="listbox" aria-label="World type" tabindex="-1" hidden></div>
 
 <div id="toast" class="toast" role="alert" hidden></div>
 <script src="app.js"></script>
