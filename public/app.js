@@ -15,7 +15,39 @@ const STATUS = {
 };
 const BUSY = new Set(["starting", "stopping", "restarting"]);
 
-const STAR = (members) => `<svg class="star ${members ? "members" : "free"}" viewBox="0 0 24 24" aria-label="${members ? "Members world" : "Free world"}" role="img"><path d="M12 2.6l2.8 6 6.5.7-4.9 4.4 1.4 6.4L12 16.8 6.2 20.1l1.4-6.4L2.7 9.3l6.5-.7z" /></svg>`;
+// World list icons, following the game's World Switcher (oldschool.runescape.wiki/w/World): star
+// colours mark the world type (gold members, silver free-to-play, green Leagues) and Hardcore Worlds
+// have the game's own Hardcore Worlds icon (a 13x13 sprite, public/hardcore-world.png).
+const STAR_PATH = "M12 2.6l2.8 6 6.5.7-4.9 4.4 1.4 6.4L12 16.8 6.2 20.1l1.4-6.4L2.7 9.3l6.5-.7z";
+
+function iconKind(world) {
+  const league = /^league:(\d+)$/.exec(world.type ?? "");
+  if (league) return { kind: "league", n: Number(league[1]) };
+  if (world.type === "hardcore") return { kind: "hardcore" };
+  return { kind: world.members === false || world.type === "f2p" ? "free" : "members" };
+}
+
+function worldIcon(world) {
+  const k = iconKind(world);
+  const label = world.typeLabel ?? (k.kind === "free" ? "Free-to-play" : "Members");
+  if (k.kind === "league") {
+    return `<svg class="star league" viewBox="0 0 24 24" role="img" aria-label="${esc(label)} world">
+      <title>${esc(label)}</title><path d="${STAR_PATH}" /></svg>`;
+  }
+  if (k.kind === "hardcore") {
+    return `<img class="star hardcore" src="hardcore-world.png" width="13" height="13" alt="Hardcore World" title="Hardcore World">`;
+  }
+  return `<svg class="star ${k.kind}" viewBox="0 0 24 24" role="img" aria-label="${k.kind === "free" ? "Free-to-play" : "Members"} world">
+    <title>${k.kind === "free" ? "Free-to-play" : "Members"}</title><path d="${STAR_PATH}" /></svg>`;
+}
+
+/** The legend under the World Switcher: every icon, so a League or Hardcore world is recognisable on sight. */
+const LEGEND = [
+  [{ type: "members" }, "Members"],
+  [{ type: "f2p", members: false }, "Free"],
+  [{ type: "league:0", typeLabel: "League" }, "League"],
+  [{ type: "hardcore" }, "Hardcore"],
+].map(([world, text]) => `<span class="legend-item">${worldIcon(world)}${text}</span>`).join("");
 const ICON = {
   power: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v9" /><path d="M6.3 6.3a8 8 0 1 0 11.4 0" /></svg>',
   restart: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.3-5.7M20 4v5h-5" /></svg>',
@@ -86,7 +118,7 @@ function renderSwitcher() {
     return `
     <button type="button" class="world-row ${off ? "is-offline" : ""} ${BUSY.has(s.status) ? "is-busy" : ""}" data-id="${esc(s.id)}"
       ${s.id === selected ? 'aria-current="true"' : ""} title="World ${s.world.number}: ${esc(STATUS[s.status] ?? s.status)}">
-      ${STAR(s.world.members)}
+      ${worldIcon(s.world)}
       <span class="num">${s.world.number}</span>
       <span class="count">${count}</span>
       <span class="activity">${esc(activityOf(s))}</span>
@@ -96,6 +128,7 @@ function renderSwitcher() {
   const online = state.servers.filter((s) => s.status === "online");
   const players = online.reduce((n, s) => n + (s.players ?? 0), 0);
   setHtml($("#total"), `<b>${players}</b> players on <b>${online.length}</b> of ${state.servers.length} worlds`);
+  setHtml($("#legend"), LEGEND);
 
   const jobs = state.tasks ?? [];
   $("#jobs-wrap").hidden = jobs.length === 0;
@@ -216,7 +249,7 @@ function renderWorld() {
     <div class="hero osrs">
       <div>
         <div class="hero-name">
-          ${STAR(s.world.members)}
+          ${worldIcon(s.world)}
           <h1>World ${s.world.number}</h1>
           <span class="state st-${esc(s.status)}" role="status">${esc(STATUS[s.status] ?? s.status)}</span>
         </div>

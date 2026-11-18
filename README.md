@@ -32,6 +32,9 @@ FreeToPlay plugin is off, as in the server), and from the live world once it's o
 - **Restart after a crash** (per world): after an unexpected exit, or a game crash the world settings
   page reports, it restarts after 5 s, 15 s, 30 s, 1 min, 2 min, 5 min and then gives up until you
   launch it again. The count resets after 15 minutes online.
+- **World icons** follow the game's World Switcher (oldschool.runescape.wiki/w/World): gold star for
+  members, silver for free-to-play, green for Leagues, and the Hardcore Worlds icon
+  (`public/hardcore-world.png`, from the wiki) for Hardcore Worlds; a legend sits under the list.
 - **World type** (dropdown): Members, Free-to-play, Hardcore World (on branches that have it) or one of
   the leagues in `plugins/modes/data/leagues.json`. Online, it goes through the world settings page's
   Apply: players are saved (with a 60-second update countdown when anyone is on) and the server
