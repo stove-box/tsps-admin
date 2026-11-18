@@ -16,9 +16,15 @@ const STATUS = {
 const BUSY = new Set(["starting", "stopping", "restarting"]);
 
 // World list icons, following the game's World Switcher (oldschool.runescape.wiki/w/World): star
-// colours mark the world type (gold members, silver free-to-play, green Leagues) and Hardcore Worlds
-// have the game's own Hardcore Worlds icon (a 13x13 sprite, public/hardcore-world.png).
-const STAR_PATH = "M12 2.6l2.8 6 6.5.7-4.9 4.4 1.4 6.4L12 16.8 6.2 20.1l1.4-6.4L2.7 9.3l6.5-.7z";
+// colours mark the world type, using the wiki's sprites: the members star (16x16,
+// public/members-world.png), the free-to-play star (public/free-world.png), the members star turned
+// green for Leagues, and the Hardcore Worlds icon (13x13, public/hardcore-world.png).
+const SPRITE = {
+  members: { src: "members-world.png", size: 16, label: "Members" },
+  free: { src: "free-world.png", size: 16, label: "Free-to-play" },
+  league: { src: "members-world.png", size: 16, label: "League" },
+  hardcore: { src: "hardcore-world.png", size: 13, label: "Hardcore World" },
+};
 
 function iconKind(world) {
   const league = /^league:(\d+)$/.exec(world.type ?? "");
@@ -29,16 +35,9 @@ function iconKind(world) {
 
 function worldIcon(world) {
   const k = iconKind(world);
-  const label = world.typeLabel ?? (k.kind === "free" ? "Free-to-play" : "Members");
-  if (k.kind === "league") {
-    return `<svg class="star league" viewBox="0 0 24 24" role="img" aria-label="${esc(label)} world">
-      <title>${esc(label)}</title><path d="${STAR_PATH}" /></svg>`;
-  }
-  if (k.kind === "hardcore") {
-    return `<img class="star hardcore" src="hardcore-world.png" width="13" height="13" alt="Hardcore World" title="Hardcore World">`;
-  }
-  return `<svg class="star ${k.kind}" viewBox="0 0 24 24" role="img" aria-label="${k.kind === "free" ? "Free-to-play" : "Members"} world">
-    <title>${k.kind === "free" ? "Free-to-play" : "Members"}</title><path d="${STAR_PATH}" /></svg>`;
+  const sprite = SPRITE[k.kind];
+  const label = k.kind === "league" ? world.typeLabel ?? sprite.label : sprite.label;
+  return `<img class="star sprite ${k.kind}" src="${sprite.src}" width="${sprite.size}" height="${sprite.size}" alt="${esc(label)} world" title="${esc(label)}">`;
 }
 
 /** The legend under the World Switcher: every icon, so a League or Hardcore world is recognisable on sight. */
