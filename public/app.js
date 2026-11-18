@@ -327,7 +327,6 @@ function renderWorld() {
     <div class="hero osrs">
       <div class="hero-main">
         <div class="hero-name">
-          ${worldIcon(s.world)}
           <h1>World ${s.world.number}</h1>
           <span class="state st-${esc(s.status)}" role="status">${esc(STATUS[s.status] ?? s.status)}</span>
         </div>

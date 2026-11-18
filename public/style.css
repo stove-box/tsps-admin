@@ -141,8 +141,6 @@ button.stone.icon svg { width: 18px; height: 18px; }
 .star.sprite.hardcore { width: 13px; height: 13px; margin: 1px 2px 2px 1px; }
 /* The game marks League worlds with a green star: the members star, turned green. */
 .star.sprite.league { filter: hue-rotate(75deg) saturate(1.5) brightness(1.05) drop-shadow(1px 1px 0 #000); }
-.hero-name .star.sprite { width: 32px; height: 32px; }
-.hero-name .star.sprite.hardcore { width: 26px; height: 26px; margin: 3px; }
 .switcher-foot { padding: 8px 6px 2px; text-align: center; color: var(--rs-yellow); }
 .switcher-foot b { color: var(--rs-white); font-weight: normal; }
 
