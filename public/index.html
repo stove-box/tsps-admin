@@ -97,6 +97,18 @@
   </form>
 </dialog>
 
+<!-- A job's output (Details in Recent jobs), in the dialogs' style; it follows a running job live. -->
+<dialog id="job-dialog" class="osrs-dialog confirm-dialog job-dialog" aria-labelledby="job-title">
+  <form method="dialog">
+    <h2 class="rs-title" id="job-title"></h2>
+    <p id="job-summary" class="job-summary"></p>
+    <pre id="job-log" class="job-log-box" tabindex="0"></pre>
+    <div class="confirm-actions single">
+      <button value="close" class="stone">Close</button>
+    </div>
+  </form>
+</dialog>
+
 <!-- "Are you sure?" in the game's style: replaces the browser's confirm() box. -->
 <dialog id="confirm-dialog" class="osrs-dialog confirm-dialog" aria-labelledby="confirm-title" aria-describedby="confirm-text">
   <form method="dialog">

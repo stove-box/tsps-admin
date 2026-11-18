@@ -202,7 +202,7 @@ const JOB_ICON = {
   fetch: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.3-5.7M20 4v5h-5" /></svg>',
   remove: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 12a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1l1-12M9 7V4h6v3" /></svg>',
 };
-const openJobs = new Set(); // jobs whose Details are expanded, kept across redraws
+let jobShown = null; // the job whose output the Details dialog shows, so it follows the job live
 
 function ago(t) {
   const s = Math.max(0, Math.round((Date.now() - t) / 1000));
@@ -245,24 +245,48 @@ function renderJobs() {
   const jobs = (state.tasks ?? []).slice(0, 6);
   $("#jobs-wrap").hidden = jobs.length === 0;
   $("#jobs-clear").hidden = !jobs.some((t) => t.state !== "running");
+  // Details sits on the card's title line and opens the output in a dialog, so the list never grows.
   setHtml($("#jobs"), jobs.map((t) => `
     <article class="job j-${esc(t.state)} k-${esc(t.kind ?? "job")}" data-id="${esc(t.id)}">
       <span class="job-icon">${JOB_ICON[t.kind] ?? JOB_ICON.fetch}</span>
       <div class="job-body">
         <div class="job-title">${esc(t.title ?? "Job")}${t.detail ? ` <span class="job-detail">${esc(t.detail)}</span>` : ""}</div>
         <div class="job-status">${jobStatus(t)}</div>
-        ${t.lines.length ? `<details class="job-log" data-id="${esc(t.id)}" ${openJobs.has(t.id) ? "open" : ""}>
-          <summary class="addr-btn">Details</summary><pre>${esc(t.lines.filter((l, i, a) => l || a[i - 1]).join("\n"))}</pre></details>` : ""}
       </div>
+      ${t.lines.length ? `<button type="button" class="addr-btn job-more" data-job="${esc(t.id)}" aria-label="Details of ${esc(t.title ?? "this job")}">Details</button>` : ""}
     </article>`).join(""));
-  for (const pre of document.querySelectorAll(".job-log[open] pre")) pre.scrollTop = pre.scrollHeight;
+  if (jobShown) showJob(jobShown);
 }
 
-$("#jobs").addEventListener("toggle", (e) => {
-  const d = e.target.closest?.(".job-log");
-  if (!d) return;
-  if (d.open) { openJobs.add(d.dataset.id); d.querySelector("pre").scrollTop = 1e9; } else openJobs.delete(d.dataset.id);
-}, true);
+const jobLog = (t) => t.lines.filter((l, i, a) => l || a[i - 1]).join("\n");
+
+/** Fills the Details dialog for job `id`, keeping it scrolled to the end if it was there. */
+function showJob(id) {
+  const t = (state.tasks ?? []).find((x) => x.id === id);
+  if (!t) return;
+  $("#job-title").textContent = `${t.title ?? "Job"}${t.detail ? ` (${t.detail})` : ""}`;
+  $("#job-summary").textContent = t.state === "running" ? `Working ${clock(Date.now() - t.at)}`
+    : t.state === "failed" ? `Failed: ${t.summary ?? "see below"}` : t.summary ?? "Done";
+  $("#job-summary").className = `job-summary ${t.state}`;
+  const pre = $("#job-log");
+  const atEnd = pre.scrollHeight - pre.scrollTop - pre.clientHeight < 24;
+  const text = jobLog(t) || "No output.";
+  if (pre.textContent !== text) {
+    pre.textContent = text;
+    if (atEnd) pre.scrollTop = pre.scrollHeight;
+  }
+}
+
+$("#jobs").addEventListener("click", (e) => {
+  const btn = e.target.closest("button[data-job]");
+  if (!btn) return;
+  jobShown = btn.dataset.job;
+  $("#job-log").textContent = "";
+  showJob(jobShown);
+  $("#job-dialog").showModal();
+  $("#job-log").scrollTop = $("#job-log").scrollHeight;
+});
+$("#job-dialog").addEventListener("close", () => { jobShown = null; });
 $("#jobs-clear").onclick = () => post("/api/tasks/clear").catch((err) => toast(err.message));
 setInterval(() => { if (state.tasks?.length) renderJobs(); }, 1000);
 
