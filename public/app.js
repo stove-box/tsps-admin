@@ -162,7 +162,19 @@ function jobStatus(t) {
     : `<span class="job-state failed">Failed</span><span class="job-msg">${esc(t.summary ?? "See details")}</span><span class="job-when">${ago(t.endedAt ?? t.at)}</span>`;
 }
 
+/** A job with this key is running (the server hands it back rather than starting a second). */
+const jobRunning = (key) => (state.tasks ?? []).some((t) => t.key === key && t.state === "running");
+
+/** "Check for updates" rests while a check runs, then comes back. */
+function renderFetchButton() {
+  const checking = jobRunning("fetch") || busy.has("fetch");
+  const btn = $("#fetch");
+  btn.disabled = checking;
+  btn.querySelector(".label").textContent = checking ? "Checking..." : "Check for updates";
+}
+
 function renderJobs() {
+  renderFetchButton();
   const jobs = (state.tasks ?? []).slice(0, 6);
   $("#jobs-wrap").hidden = jobs.length === 0;
   $("#jobs-clear").hidden = !jobs.some((t) => t.state !== "running");
@@ -544,7 +556,9 @@ function renderWorld() {
           <dt>Changes</dt><dd>${g.dirty ? `<span class="bad">${g.dirty} uncommitted</span>` : `<span class="good">None</span>`}</dd>
         </dl>
         ${g.last ? `<div class="commit osrs-inset"><code>${esc(g.last.hash)}</code> ${esc(g.last.subject)} <span class="when">- ${esc(g.last.when)}</span></div>` : ""}
-        ${g.upstream ? `<div class="links"><button type="button" class="stone" ${b("pull")} data-act="pull" title="${esc(pullTip)}">${ICON.update}${waiting ? `Update (${waiting} new)` : "Update"}</button></div>` : ""}`
+        ${g.upstream ? (jobRunning(`update:${s.id}`) || busy.has(`${s.id}:pull`)
+          ? `<div class="links"><button type="button" class="stone" disabled>${ICON.update}Updating...</button></div>`
+          : `<div class="links"><button type="button" class="stone" data-act="pull" title="${esc(pullTip)}">${ICON.update}${waiting ? `Update (${waiting} new)` : "Update"}</button></div>`) : ""}`
         : `<p class="rs" style="margin:0;color:#e8dcc0">Loading...</p>`}
       </section>
       <section class="panel osrs">
@@ -713,7 +727,12 @@ $("#world").addEventListener("change", (e) => {
   const flag = e.target.dataset?.flag;
   if (flag && selected) post(`/api/servers/${selected}/flags`, { [flag]: e.target.checked }).catch((err) => toast(err.message));
 });
-$("#fetch").onclick = () => post("/api/git/fetch").catch((err) => toast(err.message));
+$("#fetch").onclick = () => {
+  if (jobRunning("fetch") || busy.has("fetch")) return;
+  busy.add("fetch");
+  renderFetchButton();
+  post("/api/git/fetch").catch((err) => toast(err.message)).finally(() => { busy.delete("fetch"); renderFetchButton(); });
+};
 // ---- New world ----
 
 /** A typed name as a branch git accepts: spaces become dashes, characters git refuses are dropped. */
@@ -844,6 +863,7 @@ function connect() {
     const i = state.tasks.findIndex((x) => x.id === t.id);
     if (i >= 0) state.tasks[i] = t; else state.tasks.unshift(t);
     renderSwitcher();
+    renderWorld(); // its Update button rests while the update runs (only redraws when that changes)
     watchNewWorld();
   });
   es.addEventListener("log", (e) => {

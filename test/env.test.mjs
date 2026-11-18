@@ -150,3 +150,26 @@ test("GitHub remotes: owner/name from https and ssh URLs", async () => {
   assert.equal(githubRepo("git@github.com:RSPSApp/tsps.git"), "RSPSApp/tsps");
   assert.equal(githubRepo("https://gitlab.com/a/b"), null);
 });
+
+test("repeated clicks reuse a running or just-finished job instead of starting another", async () => {
+  const { Fleet } = await import("../src/fleet.mjs");
+  const fleet = new Fleet({ repo: ".", dataDir: mkdtempSync(join(tmpdir(), "tsps-admin-")), bash: "bash" });
+  fleet.refresh = async () => {}; // no checkout to look at in a test
+  let runs = 0;
+  let finish;
+  const job = () => fleet.task({ kind: "update", title: "Update World 1", key: "update:w1", cooldownMs: 10_000 },
+    () => { runs++; return new Promise((r) => (finish = r)); });
+  const first = job();
+  assert.equal(job(), first, "a second click while it runs gets the same job");
+  assert.equal(job(), first);
+  assert.equal(runs, 1);
+  finish(0);
+  await new Promise((r) => setTimeout(r, 10));
+  assert.equal(first.state, "done");
+  assert.equal(job(), first, "inside the cooldown, the finished job is handed back");
+  assert.equal(runs, 1);
+  first.endedAt -= 11_000; // the cooldown has passed
+  assert.notEqual(job(), first, "after it, a new job starts");
+  assert.equal(runs, 2);
+  finish(0);
+});

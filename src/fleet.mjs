@@ -575,12 +575,20 @@ export class Fleet extends EventEmitter {
 
   /**
    * A background job the page lists under Recent jobs. `meta`: { kind, title, detail } in plain words
-   * ("Update World 1", "main"). `fn(onLine, job)` returns the exit code and may set `job.summary`,
-   * the one line shown when it finishes; otherwise a failure shows its last error line.
+   * ("Update World 1", "main"), plus `key` and `cooldownMs`: a job with the same key that is still
+   * running, or finished less than cooldownMs ago, is handed back instead of starting another, so
+   * repeated clicks never run two git jobs on one checkout at once. `fn(onLine, job)` returns the
+   * exit code and may set `job.summary`, the one line shown when it finishes; otherwise a failure
+   * shows its last error line.
    */
   task(meta, fn) {
+    if (meta.key) {
+      const same = this.tasks.find((t) => t.key === meta.key);
+      if (same && (same.state === "running" || Date.now() - (same.endedAt ?? 0) < (meta.cooldownMs ?? 0))) return same;
+    }
     const task = {
       id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+      key: meta.key ?? null,
       kind: meta.kind, title: meta.title, detail: meta.detail ?? null,
       state: "running", summary: null, lines: [], at: Date.now(), endedAt: null,
     };
@@ -613,7 +621,7 @@ export class Fleet extends EventEmitter {
   }
 
   fetchAll() {
-    return this.task({ kind: "fetch", title: "Check for updates" }, async (onLine, job) => {
+    return this.task({ kind: "fetch", title: "Check for updates", key: "fetch", cooldownMs: 15_000 }, async (onLine, job) => {
       const code = await stream("git", ["-C", this.repo, "fetch", "--all", "--prune", "--progress"], { onLine });
       for (const r of this.servers.values()) { r.gitAt = 0; r.forkAt = 0; }
       // Ref lines look like " * [new branch]  x -> origin/x" or "   1a2b..3c4d  main -> origin/main".
@@ -627,7 +635,7 @@ export class Fleet extends EventEmitter {
     const rec = this.get(id);
     if (!rec.git?.upstream) throw Object.assign(new Error("This branch has no upstream to pull from."), { status: 409 });
     const n = worldNumber(rec);
-    return this.task({ kind: "update", title: `Update World ${n}`, detail: rec.branch }, async (onLine, job) => {
+    return this.task({ kind: "update", title: `Update World ${n}`, detail: rec.branch, key: `update:${rec.id}`, cooldownMs: 10_000 }, async (onLine, job) => {
       // Following the fork's default branch: bring the fork up to its parent on GitHub first, as
       // GitHub's "Sync fork" does. gh refuses (fast-forward only) if the fork's branch has its own commits.
       const fork = await this.fork();
@@ -658,7 +666,7 @@ export class Fleet extends EventEmitter {
     const args = [join(this.repo, "scripts", "wt"), "new", branch, ...(base ? [base] : [])];
     // Where `wt new` puts it: beside the main checkout, named after it and the branch.
     const dir = join(dirname(this.repo), `${basename(this.repo)}-${branch.replace(/\//g, "-")}`);
-    return this.task({ kind: "create", title: "Create world", detail: branch }, async (onLine, job) => {
+    return this.task({ kind: "create", title: "Create world", detail: branch, key: `create:${branch}` }, async (onLine, job) => {
       const code = await stream(this.bash, args, { cwd: this.repo, env: childEnv(process.env, this.repo), onLine });
       if (code !== 0) return code;
       await this.refresh();
@@ -692,7 +700,7 @@ export class Fleet extends EventEmitter {
     if (rec.proc || rec.probe?.gameUp || rec.probe?.panelUp) throw Object.assign(new Error("Shut the world down first."), { status: 409 });
     await this.refreshGit(rec);
     const dir = rec.dir.replace(/\\/g, "/");
-    const meta = { kind: "remove", title: `Remove World ${worldNumber(rec)}`, detail: rec.branch ?? basename(rec.dir) };
+    const meta = { kind: "remove", title: `Remove World ${worldNumber(rec)}`, detail: rec.branch ?? basename(rec.dir), key: `remove:${rec.id}` };
     const kept = `Removed; branch ${meta.detail} kept`;
     if (!rec.git?.dirty) {
       return this.task(meta, async (onLine, job) => {
