@@ -172,6 +172,21 @@ function setHtml(el, html) {
 
 // ---- World Switcher ----
 
+/** A greyed placeholder row for each world still being created, until the real one appears. */
+function creatingRows() {
+  return (state.tasks ?? []).filter((t) => t.kind === "create" && t.state === "running").map((t) => {
+    const type = t.type ?? "members";
+    const label = newWorldTypes().find((x) => x.id === type)?.label ?? "Members";
+    return `
+    <div class="world-row is-creating" role="note" title="Creating a ${esc(label)} world from ${esc(t.detail ?? "")}">
+      ${worldIcon({ type, typeLabel: label, members: type !== "f2p" })}
+      <span class="num">...</span>
+      <span class="count">...</span>
+      <span class="activity">Creating...</span>
+    </div>`;
+  }).join("");
+}
+
 function renderSwitcher() {
   setHtml($("#world-list"), state.servers.map((s) => {
     const off = s.status === "offline" || s.status === "game-stopped" || s.status === "failed";
@@ -185,7 +200,7 @@ function renderSwitcher() {
       <span class="count">${count}</span>
       <span class="activity">${esc(shortType(s.world))}</span>
     </button>`;
-  }).join("") || `<p class="rs" style="margin:6px;color:#e8dcc0">No worlds yet. Create one.</p>`);
+  }).join("") + creatingRows() || `<p class="rs" style="margin:6px;color:#e8dcc0">No worlds yet. Create one.</p>`);
 
   const online = state.servers.filter((s) => s.status === "online");
   const players = online.reduce((n, s) => n + (s.players ?? 0), 0);

@@ -165,6 +165,11 @@ export class Fleet extends EventEmitter {
     const seen = new Set();
     for (const wt of list) {
       if (wt.prunable || !existsSync(wt.dir)) continue;
+      // A worktree is a world once it has its port slot. `wt new` writes the slot last, so a world
+      // being created would otherwise show up with the main checkout's ports: as a second World 1,
+      // probing (and offering to shut down) the real one.
+      const env = worktreeEnv(wt.dir);
+      if (!samePath(wt.dir, this.repo) && portsFor(env).slot == null) continue;
       let rec = [...this.servers.values()].find((r) => samePath(r.dir, wt.dir));
       if (!rec) {
         let id = slug(wt.dir);
@@ -175,7 +180,6 @@ export class Fleet extends EventEmitter {
       rec.main = samePath(wt.dir, this.repo);
       rec.branch = wt.branch;
       rec.detached = wt.detached;
-      const env = worktreeEnv(wt.dir);
       rec.ports = portsFor(env);
       rec.token = worldAdminToken(wt.dir, env);
       rec.world = worldInfo(wt.dir);
@@ -589,7 +593,7 @@ export class Fleet extends EventEmitter {
     const task = {
       id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
       key: meta.key ?? null,
-      kind: meta.kind, title: meta.title, detail: meta.detail ?? null,
+      kind: meta.kind, title: meta.title, detail: meta.detail ?? null, type: meta.type ?? null,
       state: "running", summary: null, lines: [], at: Date.now(), endedAt: null,
     };
     this.tasks.unshift(task);
@@ -666,7 +670,7 @@ export class Fleet extends EventEmitter {
     const args = [join(this.repo, "scripts", "wt"), "new", branch, ...(base ? [base] : [])];
     // Where `wt new` puts it: beside the main checkout, named after it and the branch.
     const dir = join(dirname(this.repo), `${basename(this.repo)}-${branch.replace(/\//g, "-")}`);
-    return this.task({ kind: "create", title: "Create world", detail: branch, key: `create:${branch}` }, async (onLine, job) => {
+    return this.task({ kind: "create", title: "Create world", detail: branch, type, key: `create:${branch}` }, async (onLine, job) => {
       const code = await stream(this.bash, args, { cwd: this.repo, env: childEnv(process.env, this.repo), onLine });
       if (code !== 0) return code;
       await this.refresh();

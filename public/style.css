@@ -452,3 +452,8 @@ button.stone.icon svg { width: 18px; height: 18px; }
    longest name (Leagues IV - Trailblazer Reloaded, 290px), the label left-aligned in it. */
 .hero .type-select { width: 300px; max-width: 100%; justify-content: flex-start; }
 .hero .type-select .type-label { flex: 1; min-width: 0; text-align: left; }
+
+/* A world still being created: a greyed, unclickable row in the World Switcher */
+.world-row.is-creating { cursor: default; opacity: .6; }
+.world-row.is-creating .activity { color: var(--rs-orange); animation: blink 1.1s steps(2) infinite; }
+@media (prefers-reduced-motion: reduce) { .world-row.is-creating .activity { animation: none; } }
