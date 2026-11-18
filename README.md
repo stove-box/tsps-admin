@@ -1,7 +1,7 @@
 # TSPS | Server Admin Panel
 
-One local page to start, stop and watch every tsps server on this PC: the main checkout and each
-`scripts/wt` worktree.
+A world management panel for every tsps world on this PC: the main checkout and each `scripts/wt`
+worktree, shown as numbered worlds in an Old School RuneScape style World Switcher.
 
 ```
 start-panel.cmd          # or: npm start
@@ -11,31 +11,36 @@ The console prints `http://localhost:47100/?token=…`. Open that link once; it 
 panel then works at `http://localhost:47100`. The token is kept in `data/admin.token` (delete it to
 get a new one).
 
-## What it does
+## Worlds
 
-- **Finds the servers** with `git worktree list` on the tsps checkout, and reads each one's ports from
-  its `.env` the way `docs/worktrees.md` lays them out (main: 3000/43594/49700/49600, slot N: 3100+N …).
-- **Start** runs `yarn start` in the worktree. The panel strips `PORT`, `WEBSOCKET_PORT` and the other
-  slot keys from the environment it passes on, because `run-with-env.mjs` lets inherited variables beat
-  `.env`; each server gets its own ports.
-- **Stop** asks the server's world config page (`/api/server/stop`, with its token) to save players
-  and stop the game, waits up to 60 s, then ends the whole process tree (`taskkill /T`).
-- **Restart** restarts just the game through the world config page when it's online, else stop + start.
-- **Servers started from a terminal** are detected by probing their game and world config ports. The
-  panel can stop/start/restart their game through the world config page but leaves the process alone.
-- **Logs**: the last 3000 lines per server live in the page (filter, follow); the full log of the
-  current run is in `data/logs/<worktree>.log`, the previous run in `.log.1`.
-- **Auto-restart** (per server): after an unexpected exit, or a game crash the world config page
-  reports, it restarts after 5 s, 15 s, 30 s, 1 min, 2 min, 5 min and then gives up until you start it
-  again. The count resets after 15 minutes online.
-- **Start with panel** (per server): starts it when the panel starts. To start the panel when you sign
-  in to Windows, run `powershell -File scripts/install-startup.ps1` (`-Remove` undoes it).
-- **Git**: branch, upstream, ahead/behind, uncommitted file count and last commit per worktree.
-  **Fetch** runs `git fetch --all --prune`; **Pull** runs `git pull --ff-only`.
-- **New worktree** runs `scripts/wt new <branch> [base]` through Git Bash; **Remove** runs
-  `scripts/wt rm`, only for stopped worktrees. Git refuses to remove one with uncommitted changes, and
-  the branch is kept.
-- **Ctrl+C** in the panel's console stops the servers it started (players are saved), then exits.
+Each checkout is a world. Its number is 300 + its `scripts/wt` slot (the main checkout is World 300,
+slot 2 is World 302); its activity is the branch. Name, description, members/free and XP rate come
+from its `server/data/definitions/world.json` with `world.local.json` over it (members while the
+FreeToPlay plugin is off, as in the server), and from the live world once it's online.
+
+- **Launch world** runs `yarn start` in the worktree. The panel strips `PORT`, `WEBSOCKET_PORT` and the
+  other slot keys from the environment it passes on, because `run-with-env.mjs` lets inherited
+  variables beat `.env`; each world gets its own ports.
+- **Play** opens the world's game client.
+- **Shut down** asks the world's settings page (`/api/server/stop`, with its token) to save players
+  and stop the game, waits up to 60 s, then ends the process tree (`taskkill /T`). A world launched
+  from a terminal is shut down the same way, then the processes listening on its own ports are ended.
+- **Restart server** restarts just the game through the world settings page when it's online.
+- **Console**: the chatbox keeps the last 3000 lines (tabs for Game, Client, Panel and Errors, search,
+  follow); the full log of the current run is in `data/logs/<worktree>.log`, the previous run in
+  `.log.1`.
+- **Restart after a crash** (per world): after an unexpected exit, or a game crash the world settings
+  page reports, it restarts after 5 s, 15 s, 30 s, 1 min, 2 min, 5 min and then gives up until you
+  launch it again. The count resets after 15 minutes online.
+- **Launch when the panel opens** (per world). To open the panel when you sign in to Windows, run
+  `powershell -File scripts/install-startup.ps1` (`-Remove` undoes it).
+- **Game update**: branch, upstream, ahead/behind, uncommitted files and last commit. **Check for
+  updates** runs `git fetch --all --prune`; **Update** runs `git pull --ff-only`.
+- **New world** runs `scripts/wt new <branch> [base]` through Git Bash.
+- **Remove world** (Danger zone, shut-down worlds only) runs `scripts/wt rm`. If the worktree has
+  uncommitted changes, the dialog lists them and removes it with `git worktree remove --force` only
+  after you tick "Discard these changes". The branch is always kept.
+- **Ctrl+C** in the panel's console shuts down the worlds it launched (players are saved), then exits.
 
 ## Configuration
 
@@ -45,19 +50,21 @@ get a new one).
 { "tspsRepo": "../tsps", "port": 47100, "bash": "C:/Program Files/Git/bin/bash.exe" }
 ```
 
-`TSPS_REPO`, `ADMIN_PORT` and `ADMIN_TOKEN` environment variables override these. Settings toggled in
+`TSPS_REPO`, `ADMIN_PORT` and `ADMIN_TOKEN` environment variables override these. Options toggled in
 the page are saved in `data/settings.json`.
 
 ## Security
 
 The panel listens on 127.0.0.1 only and needs its token on every request (cookie or
 `Authorization: Bearer`). It accepts only `localhost`/`127.0.0.1` Host headers (against DNS
-rebinding), refuses cross-origin writes and requires JSON bodies. It shows each server's world config
-link with that server's token, so treat the panel link like a password.
+rebinding), refuses cross-origin writes and requires JSON bodies. It links each world's settings page
+with that world's token, so treat the panel link like a password.
 
 ## Development
 
 No dependencies; Node 22.16+. `npm test` runs the unit tests.
 
-The page's look (palette, IBM Plex Sans, status pills, server bar) follows the server's world config
-page. The Plex fonts are under the SIL Open Font License (`public/ibm-plex-license.txt`).
+The page frame (palette, IBM Plex Sans, gold rules) follows rsps.app/host and the server's world
+config page; the worlds are drawn with OSRS interface pieces and the RuneScape fonts from the tsps
+client (`client/media`). The Plex fonts are under the SIL Open Font License
+(`public/ibm-plex-license.txt`).

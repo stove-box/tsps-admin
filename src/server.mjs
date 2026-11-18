@@ -76,7 +76,7 @@ async function readJson(req) {
 
 const TYPES = {
   ".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8",
-  ".svg": "image/svg+xml", ".png": "image/png", ".woff2": "font/woff2", ".txt": "text/plain; charset=utf-8",
+  ".svg": "image/svg+xml", ".png": "image/png", ".woff2": "font/woff2", ".ttf": "font/ttf", ".txt": "text/plain; charset=utf-8",
 };
 
 // ---- live updates (server-sent events) ----
@@ -105,7 +105,7 @@ const ACTIONS = {
   "game-stop": (id) => fleet.game(id, "stop"),
   "game-restart": (id) => fleet.game(id, "restart"),
   pull: (id) => fleet.pull(id),
-  remove: (id) => fleet.removeWorktree(id),
+  remove: (id, body) => fleet.removeWorktree(id, { discard: body.discard === true }),
 };
 
 async function handle(req, res) {
@@ -164,7 +164,7 @@ async function handle(req, res) {
     if (!fn) return send(res, 404, { error: "Unknown action" });
     fleet.get(id);
     // Stop can take a minute (players are saved first); answer now and let events report progress.
-    const work = Promise.resolve(fn(id));
+    const work = Promise.resolve().then(() => fn(id, body));
     const result = await Promise.race([work, new Promise((r) => setTimeout(() => r("pending"), 1500))]);
     if (result === "pending") work.catch((err) => console.error(`[admin] ${action} ${id}: ${err.message}`));
     return send(res, 202, { ok: true, task: result?.id ?? null });
@@ -179,7 +179,7 @@ async function handle(req, res) {
 
 const server = http.createServer((req, res) => {
   handle(req, res).catch((err) => {
-    if (!res.headersSent) send(res, err.status ?? 500, { error: err.message });
+    if (!res.headersSent) send(res, err.status ?? 500, { error: err.message, ...(err.changes ? { changes: err.changes } : {}) });
     else res.end();
   });
 });
@@ -206,6 +206,8 @@ async function quit() {
   await fleet.shutdown();
   process.exit(0);
 }
+// A failed background job (a stop that times out, a probe) is logged, never fatal: the panel keeps watching.
+process.on("unhandledRejection", (err) => console.error("[admin]", err?.message ?? err));
 process.on("SIGINT", quit);
 process.on("SIGTERM", quit);
 process.on("SIGBREAK", quit);

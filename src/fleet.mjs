@@ -57,6 +57,46 @@ function killTree(pid) {
   });
 }
 
+/** PIDs listening on any of `ports` (Windows `netstat -ano`, elsewhere `lsof`). */
+function listeningPids(ports) {
+  const want = new Set(ports.map(String));
+  return new Promise((done) => {
+    const [cmd, args] = process.platform === "win32" ? ["netstat", ["-ano", "-p", "TCP"]] : ["lsof", ["-nP", "-iTCP", "-sTCP:LISTEN"]];
+    execFile(cmd, args, { windowsHide: true, maxBuffer: 8 << 20 }, (_err, stdout) => {
+      const pids = new Set();
+      for (const line of String(stdout).split(/\r?\n/)) {
+        const cols = line.trim().split(/\s+/);
+        if (process.platform === "win32") {
+          if (cols[3] === "LISTENING" && want.has(cols[1]?.split(":").pop())) pids.add(Number(cols[4]));
+        } else if (want.has(cols[8]?.split(":").pop())) pids.add(Number(cols[1]));
+      }
+      pids.delete(process.pid);
+      done([...pids].filter((p) => Number.isInteger(p) && p > 4));
+    });
+  });
+}
+
+/** world.json with world.local.json over it: what the world list shows about this world. */
+export function worldInfo(dir) {
+  const read = (f) => { try { return JSON.parse(readFileSync(join(dir, "server", "data", "definitions", f), "utf8")); } catch { return {}; } };
+  const shipped = read("world.json");
+  const local = read("world.local.json");
+  const world = { ...shipped, ...local, plugins: { ...(shipped.plugins ?? {}), ...(local.plugins ?? {}) } };
+  // Same rule as the server's WorldPluginConfig.isFreeToPlayWorld: the FreeToPlay plugin switch.
+  let f2p = false;
+  for (const [name, entry] of Object.entries(world.plugins)) {
+    if (name.toLowerCase().replace(/[^a-z0-9]/g, "") !== "freetoplay") continue;
+    const v = entry && typeof entry === "object" ? entry.enabled : entry;
+    if (typeof v === "boolean") f2p = v;
+  }
+  return {
+    name: typeof world.name === "string" && world.name ? world.name : "Old School RuneScape",
+    description: typeof world.description === "string" ? world.description : "",
+    members: !f2p,
+    xp: Number(world.experienceMultiplier) || 1,
+  };
+}
+
 const slug = (dir) => basename(dir).toLowerCase().replace(/[^a-z0-9-]+/g, "-");
 
 export class Fleet extends EventEmitter {
@@ -103,6 +143,7 @@ export class Fleet extends EventEmitter {
       const env = worktreeEnv(wt.dir);
       rec.ports = portsFor(env);
       rec.token = worldAdminToken(wt.dir, env);
+      rec.world = worldInfo(wt.dir);
       seen.add(rec.id);
     }
     for (const [id, rec] of this.servers) if (!seen.has(id) && !rec.proc) this.servers.delete(id);
@@ -128,6 +169,7 @@ export class Fleet extends EventEmitter {
       panelUp: catalog.status === 200,
       serverStatus: catalog.status === 200 ? catalog.json?.serverStatus ?? null : null,
       players: catalog.status === 200 ? catalog.json?.onlinePlayers ?? null : null,
+      members: catalog.status === 200 && typeof catalog.json?.membersWorld === "boolean" ? catalog.json.membersWorld : null,
     };
     // The game crashed inside a panel we launched: the process lives, nodemon waits for a file change.
     if (rec.proc && rec.procState !== "stopping" && rec.probe.serverStatus === "failed" && prev !== "failed") {
@@ -187,10 +229,11 @@ export class Fleet extends EventEmitter {
     // An automatic restart keeps appending, so the crash stays in the same file.
     if (!auto || !rec.logFile) this.openLogFile(rec);
     this.log(rec, `[admin] yarn start in ${rec.dir}`);
-    const proc = spawn("yarn", ["start"], {
+    // One command string: Node warns about (and won't escape) separate args when shell is on.
+    const proc = spawn("yarn start", {
       cwd: rec.dir,
       env: childEnv(process.env, rec.dir),
-      shell: process.platform === "win32",
+      shell: true,
       windowsHide: true,
       detached: process.platform !== "win32",
     });
@@ -245,6 +288,37 @@ export class Fleet extends EventEmitter {
     }, delay);
   }
 
+  /** Asks the game to save players and stop, then waits until it reports stopped (or the grace runs out). */
+  async saveAndStopGame(rec) {
+    if (!rec.token || rec.probe?.serverStatus !== "online") return;
+    this.log(rec, "[admin] asking the game to save players and stop");
+    await getJson({ port: rec.ports.worldAdmin, path: "/api/server/stop", token: rec.token, method: "POST", timeout: 5000 });
+    const deadline = Date.now() + STOP_GRACE_MS;
+    while (Date.now() < deadline) {
+      const c = await getJson({ port: rec.ports.worldAdmin, path: "/api/catalog", token: rec.token });
+      if (c.status !== 200 || ["stopped", "failed"].includes(c.json?.serverStatus)) return;
+      await new Promise((r) => setTimeout(r, 1000));
+    }
+  }
+
+  /** A world started from a terminal: save players, then end the processes listening on its own ports. */
+  async stopExternal(rec) {
+    if (rec.procState === "stopping") return;
+    rec.procState = "stopping";
+    this.emit("state");
+    try {
+      await this.saveAndStopGame(rec);
+      const pids = await listeningPids(Object.values(rec.ports).filter((p) => typeof p === "number"));
+      this.log(rec, `[admin] ending terminal-started processes: ${pids.join(", ") || "none left"}`);
+      for (const pid of pids) await killTree(pid);
+    } finally {
+      rec.procState = null;
+      rec.probe = null;
+      await this.probe(rec).catch(() => {});
+      this.emit("state");
+    }
+  }
+
   /** Lets the game save players, then ends the whole `yarn start` tree. */
   async stop(id) {
     const rec = this.get(id);
@@ -252,7 +326,7 @@ export class Fleet extends EventEmitter {
     rec.retryAt = null;
     rec.note = null;
     if (!rec.proc) {
-      if (rec.probe?.panelUp) return this.game(id, "stop");
+      if (rec.probe?.gameUp || rec.probe?.panelUp) return this.stopExternal(rec);
       return;
     }
     if (rec.procState === "stopping") return;
@@ -260,16 +334,7 @@ export class Fleet extends EventEmitter {
     rec.procState = "stopping";
     this.emit("state");
     const exited = new Promise((r) => (rec.stopResolve = r));
-    if (rec.token && rec.probe?.serverStatus === "online") {
-      this.log(rec, "[admin] asking the game to save and stop");
-      await getJson({ port: rec.ports.worldAdmin, path: "/api/server/stop", token: rec.token, method: "POST", timeout: 5000 });
-      const deadline = Date.now() + STOP_GRACE_MS;
-      while (rec.proc && Date.now() < deadline) {
-        const c = await getJson({ port: rec.ports.worldAdmin, path: "/api/catalog", token: rec.token });
-        if (c.status !== 200 || ["stopped", "failed"].includes(c.json?.serverStatus)) break;
-        await new Promise((r) => setTimeout(r, 1000));
-      }
-    }
+    await this.saveAndStopGame(rec);
     if (rec.proc) {
       this.log(rec, "[admin] ending process tree");
       await killTree(rec.proc.pid);
@@ -360,12 +425,30 @@ export class Fleet extends EventEmitter {
     return this.task(`wt new ${branch}${base ? ` ${base}` : ""}`, (onLine) => stream(this.bash, args, { cwd: this.repo, env: childEnv(process.env, this.repo), onLine }));
   }
 
-  removeWorktree(id) {
+  /**
+   * `scripts/wt rm`. Git refuses a worktree with uncommitted changes; with `discard: true` (the page
+   * lists them and asks first) it runs `git worktree remove --force`. The branch is always kept.
+   */
+  async removeWorktree(id, { discard = false } = {}) {
     const rec = this.get(id);
     if (rec.main) throw Object.assign(new Error("The main checkout can't be removed."), { status: 400 });
-    if (rec.proc || rec.probe?.gameUp || rec.probe?.panelUp) throw Object.assign(new Error("Stop the server first."), { status: 409 });
-    // `git worktree remove` without --force refuses a worktree with uncommitted changes.
-    return this.task(`wt rm ${rec.branch ?? rec.dir}`, (onLine) => stream(this.bash, [join(this.repo, "scripts", "wt"), "rm", rec.dir.replace(/\\/g, "/")], { cwd: this.repo, onLine }));
+    if (rec.proc || rec.probe?.gameUp || rec.probe?.panelUp) throw Object.assign(new Error("Shut the world down first."), { status: 409 });
+    await this.refreshGit(rec);
+    const dir = rec.dir.replace(/\\/g, "/");
+    const name = rec.branch ?? basename(rec.dir);
+    if (!rec.git?.dirty) {
+      return this.task(`Remove ${name}`, (onLine) => stream(this.bash, [join(this.repo, "scripts", "wt"), "rm", dir], { cwd: this.repo, onLine }));
+    }
+    if (!discard) {
+      throw Object.assign(new Error(`${rec.git.dirty} uncommitted change(s) would be lost.`), { status: 409, changes: rec.git.changes });
+    }
+    const n = rec.git.dirty;
+    return this.task(`Remove ${name} (discarding ${n} change${n === 1 ? "" : "s"})`, async (onLine) => {
+      for (const c of rec.git.changes) onLine(`discard ${c}`);
+      // The other half of `wt rm`: drop the agent MCP entry if it pointed at this worktree.
+      await stream("claude", ["mcp", "remove", "tsps", "-s", "local"], { cwd: rec.dir, onLine: () => {} });
+      return stream("git", ["-C", this.repo, "worktree", "remove", "--force", dir], { onLine });
+    });
   }
 
   // ---- view ----
@@ -391,6 +474,7 @@ export class Fleet extends EventEmitter {
       retryAt: rec.retryAt,
       autostart: !!this.settings.autostart[k],
       autorestart: !!this.settings.autorestart[k],
+      world: { ...rec.world, members: rec.probe?.members ?? rec.world?.members ?? true, number: 300 + (rec.ports.slot ?? 0) },
       git: rec.git,
       links: {
         client: `http://localhost:${rec.ports.client}`,

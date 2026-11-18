@@ -6,65 +6,94 @@
   <title>TSPS | Server Admin Panel</title>
   <link rel="icon" type="image/svg+xml" href="favicon.svg">
   <link rel="icon" type="image/png" sizes="96x96" href="favicon-96x96.png">
+  <link rel="preload" href="RuneScape-Bold-12.ttf" as="font" type="font/ttf" crossorigin>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
 <div class="layout">
-  <header class="server-bar">
+  <header class="top-bar">
     <div class="bar-left">
-      <button type="button" id="menu-toggle" class="menu-toggle" aria-label="Show servers" aria-controls="sidebar" aria-expanded="false">
+      <button type="button" id="menu-toggle" class="menu-toggle" aria-label="Show worlds" aria-controls="switcher" aria-expanded="false">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16" /></svg>
       </button>
-      <img class="logo" src="favicon.svg" alt="" width="26" height="26">
+      <img class="logo" src="favicon.svg" alt="" width="30" height="30">
       <div class="title"><strong>TSPS</strong><span class="sep">|</span><span class="long">Server Admin Panel</span></div>
     </div>
     <div class="bar-right">
-      <span id="summary" class="summary"></span>
-      <span id="conn" class="conn" title="Live updates">connecting…</span>
-      <button type="button" id="fetch" title="git fetch --all --prune">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11m0 0-4-4m4 4 4-4M5 19h14" /></svg>
-        Fetch
+      <span id="conn" class="conn" title="Live updates">Connecting</span>
+      <button type="button" id="fetch" class="stone" title="git fetch --all --prune">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.3-5.7M20 4v5h-5" /></svg>
+        <span class="label">Check for updates</span>
       </button>
-      <button type="button" id="new" class="primary">
+      <button type="button" id="new" class="stone gold">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>
-        <span class="label">New worktree</span>
+        <span class="label">New world</span>
       </button>
     </div>
   </header>
 
-  <aside id="sidebar" class="sidebar">
-    <div class="group-label">Servers</div>
-    <nav id="server-list" class="server-list" aria-label="Servers"></nav>
-    <div id="activity-wrap" hidden>
-      <div class="group-label">Activity</div>
-      <div id="tasks" class="tasks"></div>
+  <aside id="switcher" class="switcher" aria-label="World Switcher">
+    <div class="switcher-panel osrs">
+      <h2 class="rs-title">World Switcher</h2>
+      <div class="switcher-head" aria-hidden="true">
+        <span></span><span>World</span><span>Players</span><span>Activity</span>
+      </div>
+      <nav id="world-list" class="world-list"></nav>
+      <div class="switcher-foot rs" id="total"></div>
+    </div>
+
+    <div id="jobs-wrap" class="jobs-wrap" hidden>
+      <h2 class="side-label">Recent jobs</h2>
+      <div id="jobs" class="jobs"></div>
     </div>
   </aside>
-  <button type="button" id="menu-backdrop" class="menu-backdrop" aria-label="Close servers menu" tabindex="-1" hidden></button>
+  <button type="button" id="menu-backdrop" class="menu-backdrop" aria-label="Close world list" tabindex="-1" hidden></button>
 
-  <main id="workspace" class="workspace">
-    <section id="detail" class="detail"></section>
+  <main class="workspace">
+    <section id="world" class="world" aria-live="polite"></section>
 
-    <section class="logs" aria-label="Logs">
-      <div class="logs-head">
-        <h2>Console</h2>
-        <input id="logs-filter" type="search" placeholder="Filter lines" aria-label="Filter log lines">
-        <label class="toggle"><input id="logs-follow" type="checkbox" checked><span class="switch" aria-hidden="true"></span>Follow</label>
+    <section class="chatbox" aria-label="Console">
+      <div id="chat-body" class="chat-body rs" tabindex="0"></div>
+      <div class="chat-tabs" role="tablist" aria-label="Console filter">
+        <button type="button" role="tab" data-filter="all" aria-selected="true">All</button>
+        <button type="button" role="tab" data-filter="server">Game</button>
+        <button type="button" role="tab" data-filter="client">Client</button>
+        <button type="button" role="tab" data-filter="admin">Panel</button>
+        <button type="button" role="tab" data-filter="error">Errors</button>
+        <input id="chat-search" type="search" placeholder="Search" aria-label="Search console">
+        <label class="osrs-check" title="Keep scrolled to the newest line">
+          <input id="chat-follow" type="checkbox" checked><span class="box" aria-hidden="true"></span><span>Follow</span>
+        </label>
       </div>
-      <pre id="logs-body" class="logs-body" tabindex="0"></pre>
     </section>
   </main>
 </div>
 
-<dialog id="new-dialog">
+<dialog id="new-dialog" class="osrs-dialog">
   <form method="dialog" id="new-form">
-    <h2>New worktree</h2>
-    <p class="muted">Runs <code>scripts/wt new</code>: creates <code>../tsps-&lt;branch&gt;</code>, gives it a port slot and copies <code>node_modules</code>. Copying can take a few minutes; progress shows under Activity.</p>
-    <label>Branch <input type="text" name="branch" required placeholder="fix/my-change" autocomplete="off" spellcheck="false"></label>
-    <label>Base <input type="text" name="base" placeholder="origin/main" autocomplete="off" spellcheck="false"></label>
+    <h2 class="rs-title">Create a new world</h2>
+    <p>Each world is its own git worktree with its own ports, saves and console. This runs <code>scripts/wt new</code>, which copies <code>node_modules</code>, so it can take a few minutes. Progress shows under Recent jobs.</p>
+    <label>Activity (branch name)<input type="text" name="branch" required placeholder="fix/my-change" autocomplete="off" spellcheck="false"></label>
+    <label>Based on<input type="text" name="base" placeholder="origin/main" autocomplete="off" spellcheck="false"></label>
     <div class="dialog-actions">
-      <button value="cancel" formnovalidate>Cancel</button>
-      <button value="ok" class="primary">Create worktree</button>
+      <button value="cancel" class="stone" formnovalidate>Cancel</button>
+      <button value="ok" class="stone gold">Create world</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="remove-dialog" class="osrs-dialog danger">
+  <form method="dialog" id="remove-form">
+    <h2 class="rs-title" id="remove-title">Remove world</h2>
+    <p id="remove-text"></p>
+    <div id="remove-changes" hidden>
+      <p class="warn-text">These uncommitted changes will be lost:</p>
+      <ul id="remove-list" class="file-list"></ul>
+      <label class="osrs-check"><input type="checkbox" id="remove-discard"><span class="box" aria-hidden="true"></span><span>Discard these changes and remove the world</span></label>
+    </div>
+    <div class="dialog-actions">
+      <button value="cancel" class="stone" formnovalidate>Keep world</button>
+      <button value="ok" id="remove-confirm" class="stone red">Remove world</button>
     </div>
   </form>
 </dialog>

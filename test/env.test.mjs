@@ -45,3 +45,14 @@ test("status combines process and probe", () => {
   assert.equal(deriveStatus({ managed: false, probe: { gameUp: true } }), "online");
   assert.equal(deriveStatus({ managed: false, probe: {}, retryAt: 1 }), "restarting");
 });
+
+test("world info: members unless the FreeToPlay plugin is on; local file wins", async () => {
+  const { worldInfo } = await import("../src/fleet.mjs");
+  const dir = mkdtempSync(join(tmpdir(), "tsps-admin-"));
+  const defs = join(dir, "server", "data", "definitions");
+  mkdirSync(defs, { recursive: true });
+  writeFileSync(join(defs, "world.json"), JSON.stringify({ name: "Old School RuneScape", experienceMultiplier: 1, plugins: {} }));
+  assert.deepEqual(worldInfo(dir), { name: "Old School RuneScape", description: "", members: true, xp: 1 });
+  writeFileSync(join(defs, "world.local.json"), JSON.stringify({ name: "Test", experienceMultiplier: 5, plugins: { FreeToPlay: { enabled: true } } }));
+  assert.deepEqual(worldInfo(dir), { name: "Test", description: "", members: false, xp: 5 });
+});

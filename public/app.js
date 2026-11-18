@@ -5,17 +5,26 @@ const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "
 
 let state = { servers: [], tasks: [] };
 let selected = null;
+let chatFilter = "all";
 const logLines = new Map(); // id -> [{t, line}]
 const busy = new Set(); // `${id}:${action}` waiting for a response
 
 const STATUS = {
-  online: "Online", starting: "Starting", stopping: "Stopping", "game-stopped": "Game stopped",
+  online: "Online", starting: "Starting", stopping: "Shutting down", "game-stopped": "World stopped",
   failed: "Crashed", offline: "Offline", restarting: "Restarting soon",
 };
+const BUSY = new Set(["starting", "stopping", "restarting"]);
+
+const STAR = (members) => `<svg class="star ${members ? "members" : "free"}" viewBox="0 0 24 24" aria-label="${members ? "Members world" : "Free world"}" role="img"><path d="M12 2.6l2.8 6 6.5.7-4.9 4.4 1.4 6.4L12 16.8 6.2 20.1l1.4-6.4L2.7 9.3l6.5-.7z" /></svg>`;
 const ICON = {
   power: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v9" /><path d="M6.3 6.3a8 8 0 1 0 11.4 0" /></svg>',
-  external: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5" /></svg>',
-  pull: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11m0 0-4-4m4 4 4-4M5 19h14" /></svg>',
+  restart: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.3-5.7M20 4v5h-5" /></svg>',
+  settings: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z" /></svg>',
+  update: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11m0 0-4-4m4 4 4-4M5 19h14" /></svg>',
+  people: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8" r="3.5" /><path d="M2.5 20a6.5 6.5 0 0 1 13 0M16 4.5a3.5 3.5 0 0 1 0 7M21.5 20a6.5 6.5 0 0 0-4-6" /></svg>',
+  clock: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></svg>',
+  crown: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 8l4.5 4L12 5l4.5 7L21 8l-2 11H5z" /></svg>',
+  xp: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19l5-6 4 3 7-9" /><path d="M15 7h5v5" /></svg>',
   trash: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 12a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1l1-12M9 7V4h6v3" /></svg>',
 };
 
@@ -29,29 +38,30 @@ function toast(msg) {
   el.textContent = msg;
   el.hidden = false;
   clearTimeout(toast.t);
-  toast.t = setTimeout(() => (el.hidden = true), 6000);
+  toast.t = setTimeout(() => (el.hidden = true), 7000);
 }
 
 async function post(path, body = {}) {
   const res = await fetch(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
   const json = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(json.error ?? `HTTP ${res.status}`);
+  if (!res.ok) throw Object.assign(new Error(json.error ?? `HTTP ${res.status}`), { data: json });
   return json;
 }
 
-async function act(id, action, confirmText) {
+async function act(id, action, { confirmText, body } = {}) {
   if (confirmText && !confirm(confirmText)) return;
   const key = `${id}:${action}`;
   busy.add(key);
-  renderDetail();
-  try { await post(`/api/servers/${id}/${action}`); }
+  renderWorld();
+  try { await post(`/api/servers/${id}/${action}`, body); }
   catch (err) { toast(err.message); }
-  finally { busy.delete(key); renderDetail(); }
+  finally { busy.delete(key); renderWorld(); }
 }
 
-const nameOf = (s) => (s.main ? "Main checkout" : s.branch ?? (s.detached ? "Detached HEAD" : s.id));
-const folderOf = (s) => s.dir.split(/[\\/]/).pop();
 const current = () => state.servers.find((s) => s.id === selected);
+const activityOf = (s) => (s.main ? "main" : s.branch ?? (s.detached ? "detached HEAD" : s.id));
+const folderOf = (s) => s.dir.split(/[\\/]/).pop();
+const running = (s) => s.managed || s.external;
 
 function duration(ms) {
   const s = Math.max(0, Math.floor(ms / 1000));
@@ -60,194 +70,259 @@ function duration(ms) {
   return `${Math.floor(s / 3600)}h ${Math.floor((s % 3600) / 60)}m`;
 }
 
-// ---- sidebar ----
-
-function renderList() {
-  setHtml($("#server-list"), state.servers.map((s) => `
-    <button type="button" class="server-item" data-id="${esc(s.id)}" ${s.id === selected ? 'aria-current="true"' : ""}
-      title="${esc(STATUS[s.status] ?? s.status)}">
-      <span class="dot s-${esc(s.status)}" aria-label="${esc(STATUS[s.status] ?? s.status)}"></span>
-      <span class="name">${esc(nameOf(s))}</span>
-      ${s.players != null && s.status === "online" ? `<span class="players" title="Players online">${s.players}</span>` : ""}
-      <span class="sub">${s.ports.slot ? `Slot ${s.ports.slot}` : "Default ports"} · :${s.ports.client}</span>
-    </button>`).join("") || `<p class="muted" style="margin:0 10px">No checkouts found.</p>`);
-
-  const online = state.servers.filter((s) => s.status === "online").length;
-  $("#summary").innerHTML = `<b>${online}</b> of ${state.servers.length} online`;
-
-  const tasks = state.tasks ?? [];
-  $("#activity-wrap").hidden = tasks.length === 0;
-  const open = new Set([...document.querySelectorAll(".task[open]")].map((d) => d.dataset.id));
-  $("#tasks").innerHTML = tasks.slice(0, 8).map((t) => `
-    <details class="task" data-id="${esc(t.id)}" ${open.has(t.id) || t.state === "running" ? "open" : ""}>
-      <summary><span class="dot t-${esc(t.state)}" aria-label="${esc(t.state)}"></span><span>${esc(t.title)}</span></summary>
-      <pre>${esc(t.lines.join("\n")) || "…"}</pre>
-    </details>`).join("");
-  for (const pre of document.querySelectorAll(".task[open] pre")) pre.scrollTop = pre.scrollHeight;
-}
-
-// ---- selected server ----
-
-function controlsFor(s) {
-  const b = (a) => (busy.has(`${s.id}:${a}`) ? "disabled" : "");
-  const name = esc(nameOf(s));
-  const gameStopped = s.status === "game-stopped" || s.status === "failed";
-  if (s.managed) {
-    const stopping = s.status === "stopping";
-    return `
-      <button type="button" class="power" ${stopping ? "disabled" : b("stop")} data-act="stop" data-confirm="Stop ${name}? Online players are saved first.">${ICON.power}${stopping ? "Stopping" : "Stop"}</button>
-      <button type="button" class="icon" ${stopping ? "disabled" : b("restart")} data-act="restart" title="Restart" aria-label="Restart">↻</button>
-      ${gameStopped ? `<button type="button" ${b("game-start")} data-act="game-start">Start game</button>` : ""}`;
-  }
-  if (s.external && s.panelUp) {
-    return gameStopped
-      ? `<button type="button" class="power primary" ${b("game-start")} data-act="game-start">${ICON.power}Start game</button>`
-      : `<button type="button" class="power" ${b("game-stop")} data-act="game-stop" data-confirm="Stop the game in ${name}? Online players are saved first.">${ICON.power}Stop game</button>
-         <button type="button" class="icon" ${b("game-restart")} data-act="game-restart" title="Restart game" aria-label="Restart game">↻</button>`;
-  }
-  if (s.external) return "";
-  return `<button type="button" class="power primary" ${b("start")} data-act="start">${ICON.power}Start</button>`;
-}
-
-function banners(s) {
-  const out = [];
-  if (s.external) {
-    out.push(`<div class="banner info">${s.panelUp
-      ? "Started from a terminal. The panel can stop and restart the game, but the process belongs to that terminal."
-      : "Running outside the panel without its world config page. Stop it in the terminal it was started from."}</div>`);
-  }
-  if (s.note) out.push(`<div class="banner ${/^Crashed|Gave up/.test(s.note) ? "error" : "warn"}">${esc(s.note)}</div>`);
-  return out.join("");
-}
-
-function factsFor(s) {
-  const g = s.git;
-  const p = s.ports;
-  const running = s.managed || s.external;
-  const exit = s.lastExit
-    ? `${s.lastExit.requested ? "Stopped" : "Exited"} ${new Date(s.lastExit.at).toLocaleTimeString()}${s.lastExit.requested ? "" : ` (${esc(s.lastExit.signal ?? `code ${s.lastExit.code}`)})`}`
-    : "—";
-  return `
-    <div class="facts">
-      <section class="fact-card">
-        <h2>Runtime</h2>
-        <dl>
-          <dt>Status</dt><dd><span class="s-${esc(s.status)}">${esc(STATUS[s.status] ?? s.status)}</span></dd>
-          <dt>Players</dt><dd>${s.players ?? "—"}</dd>
-          <dt>Uptime</dt><dd id="uptime">—</dd>
-          <dt>Started by</dt><dd>${s.managed ? `Panel (pid ${s.pid})` : running ? "Terminal" : "—"}</dd>
-          <dt>Last exit</dt><dd>${exit}</dd>
-        </dl>
-      </section>
-      <section class="fact-card">
-        <h2>Ports</h2>
-        <dl>
-          <dt>Client</dt><dd class="mono">${p.client}</dd>
-          <dt>Game</dt><dd class="mono">${p.game}</dd>
-          <dt>World config</dt><dd class="mono">${p.worldAdmin}</dd>
-          <dt>Agent MCP</dt><dd class="mono">${p.mcp}</dd>
-          <dt>Gateway</dt><dd class="mono">${p.gateway}</dd>
-        </dl>
-      </section>
-      <section class="fact-card">
-        <h2>Git</h2>
-        ${g ? `
-        <dl>
-          <dt>Branch</dt><dd class="mono">${esc(g.branch ?? "?")}</dd>
-          <dt>Tracking</dt><dd class="mono">${esc(g.upstream ?? "none")}</dd>
-          <dt>Sync</dt><dd>${!g.upstream ? "—" : g.ahead || g.behind
-            ? `${g.ahead ? `<span class="tag ok">↑ ${g.ahead} ahead</span> ` : ""}${g.behind ? `<span class="tag warn">↓ ${g.behind} behind</span>` : ""}`
-            : "Up to date"}</dd>
-          <dt>Changes</dt><dd>${g.dirty ? `<span class="tag warn">${g.dirty} uncommitted</span>` : "Clean"}</dd>
-        </dl>
-        ${g.last ? `<div class="commit"><code>${esc(g.last.hash)}</code> ${esc(g.last.subject)} <span class="muted">· ${esc(g.last.when)}</span></div>` : ""}`
-        : `<p class="muted" style="margin:0">Loading…</p>`}
-      </section>
-    </div>`;
-}
-
 // Only touch the DOM when the markup changed, so a click isn't lost to a redraw every poll.
 function setHtml(el, html) {
   if (el._html !== html) { el.innerHTML = html; el._html = html; }
 }
 
-function tickUptime() {
-  const s = current();
-  const el = document.getElementById("uptime");
-  if (el) el.textContent = s?.startedAt ? duration(Date.now() - s.startedAt) : "—";
+// ---- World Switcher ----
+
+function renderSwitcher() {
+  setHtml($("#world-list"), state.servers.map((s) => {
+    const off = s.status === "offline" || s.status === "game-stopped" || s.status === "failed";
+    const count = s.status === "online" ? (s.players ?? 0)
+      : BUSY.has(s.status) ? "..." : s.status === "failed" ? "CRASH" : "OFF";
+    return `
+    <button type="button" class="world-row ${off ? "is-offline" : ""} ${BUSY.has(s.status) ? "is-busy" : ""}" data-id="${esc(s.id)}"
+      ${s.id === selected ? 'aria-current="true"' : ""} title="World ${s.world.number}: ${esc(STATUS[s.status] ?? s.status)}">
+      ${STAR(s.world.members)}
+      <span class="num">${s.world.number}</span>
+      <span class="count">${count}</span>
+      <span class="activity">${esc(activityOf(s))}</span>
+    </button>`;
+  }).join("") || `<p class="rs" style="margin:6px;color:#e8dcc0">No worlds yet. Create one.</p>`);
+
+  const online = state.servers.filter((s) => s.status === "online");
+  const players = online.reduce((n, s) => n + (s.players ?? 0), 0);
+  setHtml($("#total"), `<b>${players}</b> players on <b>${online.length}</b> of ${state.servers.length} worlds`);
+
+  const jobs = state.tasks ?? [];
+  $("#jobs-wrap").hidden = jobs.length === 0;
+  const open = new Set([...document.querySelectorAll(".job[open]")].map((d) => d.dataset.id));
+  setHtml($("#jobs"), jobs.slice(0, 8).map((t) => `
+    <details class="job" data-id="${esc(t.id)}" ${open.has(t.id) || t.state === "running" ? "open" : ""}>
+      <summary><span class="pip j-${esc(t.state)}" aria-label="${esc(t.state)}"></span><span class="t">${esc(t.title)}</span></summary>
+      <pre>${esc(t.lines.join("\n")) || "..."}</pre>
+    </details>`).join(""));
+  for (const pre of document.querySelectorAll(".job[open] pre")) pre.scrollTop = pre.scrollHeight;
 }
 
-function renderDetail() {
-  const s = current();
-  const el = $("#detail");
-  if (!s) { setHtml(el, `<p class="muted">Select a server.</p>`); return; }
-  const running = s.managed || s.external;
+// ---- selected world ----
+
+function heroActions(s) {
   const b = (a) => (busy.has(`${s.id}:${a}`) ? "disabled" : "");
+  const n = s.world.number;
+  const stopping = s.status === "stopping";
+  const play = running(s) && s.status === "online"
+    ? `<a class="play" href="${esc(s.links.client)}" target="_blank" rel="noopener">Play<small>World ${n}</small></a>`
+    : `<span class="play off" aria-disabled="true">Play<small>${esc(STATUS[s.status] ?? s.status)}</small></span>`;
+
+  let power;
+  if (running(s)) {
+    const confirmText = s.external
+      ? `Shut down World ${n}? It was launched from a terminal: online players are saved, then the processes on its ports are ended.`
+      : `Shut down World ${n}? Online players are saved first.`;
+    power = `<button type="button" class="stone red" ${stopping ? "disabled" : b("stop")} data-act="stop" data-confirm="${esc(confirmText)}">${ICON.power}${stopping ? "Shutting down" : "Shut down"}</button>`;
+    if (s.status === "game-stopped" || s.status === "failed") {
+      power = `<button type="button" class="stone gold" ${b("game-start")} data-act="game-start">${ICON.power}Start world</button>` + power;
+    }
+  } else {
+    power = `<button type="button" class="stone gold" ${b("start")} data-act="start">${ICON.power}Launch world</button>`;
+  }
+  const canRestart = running(s) && !stopping && (s.managed || s.panelUp);
+  const restart = canRestart
+    ? `<button type="button" class="stone icon" ${b(s.managed ? "restart" : "game-restart")} data-act="${s.managed ? "restart" : "game-restart"}" title="Restart server" aria-label="Restart server">${ICON.restart}</button>`
+    : "";
+  return `${play}<div class="row">${power}${restart}</div>`;
+}
+
+function banners(s) {
+  const out = [];
+  if (s.external) out.push(`<div class="banner info">This world was launched from a terminal, so its console is there. Shut down still saves players first.</div>`);
+  if (s.note) out.push(`<div class="banner ${/^Crashed|Gave up/.test(s.note) ? "error" : "warn"}">${esc(s.note)}</div>`);
+  return out.join("");
+}
+
+function stat(icon, value, label, id) {
+  return `<div class="stat osrs"><span class="orb">${icon}</span><div><div class="v"${id ? ` id="${id}"` : ""}>${value}</div><div class="k">${label}</div></div></div>`;
+}
+
+function renderWorld() {
+  const s = current();
+  const el = $("#world");
+  if (!s) { setHtml(el, `<div class="hero osrs"><h1 class="rs-title">Select a world</h1></div>`); return; }
+  const b = (a) => (busy.has(`${s.id}:${a}`) ? "disabled" : "");
+  const g = s.git;
+  const p = s.ports;
+  const exit = s.lastExit
+    ? `${s.lastExit.requested ? "Shut down" : "Exited"} ${new Date(s.lastExit.at).toLocaleTimeString()}`
+    : "-";
+  const sync = !g?.upstream ? "No upstream"
+    : g.behind ? `<span class="bad">${g.behind} behind</span>${g.ahead ? `, ${g.ahead} ahead` : ""}`
+    : g.ahead ? `${g.ahead} ahead` : `<span class="good">Up to date</span>`;
+  const customName = s.world.name && s.world.name !== "Old School RuneScape";
+
   setHtml(el, `
-    <div class="detail-head">
-      <div class="heading">
-        <h1>${esc(nameOf(s))}</h1>
-        <div class="where">${esc(s.dir)}${s.ports.slot ? ` · slot ${s.ports.slot}` : ""}</div>
+    <div class="hero osrs">
+      <div>
+        <div class="hero-name">
+          ${STAR(s.world.members)}
+          <h1>World ${s.world.number}</h1>
+          <span class="state st-${esc(s.status)}" role="status">${esc(STATUS[s.status] ?? s.status)}</span>
+        </div>
+        <div class="activity">${esc(activityOf(s))}</div>
+        <div class="worldname">${esc(s.world.name)}${s.world.description ? ` <span class="dim">- ${esc(s.world.description)}</span>` : customName ? "" : ` <span class="dim">- ${s.world.members ? "Members" : "Free"}</span>`}</div>
       </div>
-      <span class="status s-${esc(s.status)}" role="status">${esc(STATUS[s.status] ?? s.status)}</span>
-    </div>
-    <div class="controls">
-      ${controlsFor(s)}
-      ${running ? `<a class="button" href="${esc(s.links.client)}" target="_blank" rel="noopener">${ICON.external}Open client</a>` : ""}
-      ${s.links.worldAdmin && s.panelUp ? `<a class="button" href="${esc(s.links.worldAdmin)}" target="_blank" rel="noopener">${ICON.external}World config</a>` : ""}
-      <span class="spacer"></span>
-      ${s.git?.upstream ? `<button type="button" ${b("pull")} data-act="pull" title="git pull --ff-only">${ICON.pull}Pull${s.git.behind ? ` (${s.git.behind})` : ""}</button>` : ""}
+      <div class="hero-actions">${heroActions(s)}</div>
     </div>
     ${banners(s)}
-    ${factsFor(s)}
-    <div class="settings-row">
-      <label class="toggle" title="Start this server whenever the admin panel starts">
-        <input type="checkbox" data-flag="autostart" ${s.autostart ? "checked" : ""}><span class="switch" aria-hidden="true"></span>Start with panel</label>
-      <label class="toggle" title="After a crash, restart after 5 s, 15 s, 30 s, 1 min, 2 min, 5 min; then give up">
-        <input type="checkbox" data-flag="autorestart" ${s.autorestart ? "checked" : ""}><span class="switch" aria-hidden="true"></span>Auto-restart on crash</label>
-      <span class="spacer"></span>
-      ${s.main ? "" : `<button type="button" class="danger" ${running || b("remove") ? "disabled" : ""} data-act="remove"
-        title="${running ? "Stop the server first" : "Runs scripts/wt rm; the branch is kept"}"
-        data-confirm="Remove the worktree ${esc(folderOf(s))}? Git refuses if it has uncommitted changes; the branch itself is kept.">${ICON.trash}Remove worktree</button>`}
-    </div>`);
+    <div class="stats">
+      ${stat(ICON.people, s.status === "online" ? (s.players ?? 0) : "-", "Players online")}
+      ${stat(ICON.clock, "-", "Uptime", "uptime")}
+      ${stat(ICON.crown, s.world.members ? "Members" : "Free", "World type")}
+      ${stat(ICON.xp, `x${s.world.xp}`, "XP rate")}
+    </div>
+    <div class="panels">
+      <section class="panel osrs">
+        <h2 class="rs-title">World info</h2>
+        <dl class="kv">
+          <dt>Status</dt><dd class="y">${esc(STATUS[s.status] ?? s.status)}</dd>
+          <dt>Launched by</dt><dd>${s.managed ? "This panel" : s.external ? "A terminal" : "-"}</dd>
+          <dt>Last shutdown</dt><dd>${exit}</dd>
+          <dt>Folder</dt><dd>${esc(folderOf(s))}</dd>
+        </dl>
+        <div class="links">
+          ${s.links.worldAdmin && s.panelUp ? `<a class="stone" href="${esc(s.links.worldAdmin)}" target="_blank" rel="noopener">${ICON.settings}World settings</a>` : ""}
+        </div>
+      </section>
+      <section class="panel osrs">
+        <h2 class="rs-title">Connection</h2>
+        <dl class="kv">
+          <dt>Game client</dt><dd class="y">localhost:${p.client}</dd>
+          <dt>Game server</dt><dd>${p.game}</dd>
+          <dt>World settings</dt><dd>${p.worldAdmin}</dd>
+          <dt>Agent MCP</dt><dd>${p.mcp}</dd>
+          <dt>Gateway</dt><dd>${p.gateway}</dd>
+        </dl>
+      </section>
+      <section class="panel osrs">
+        <h2 class="rs-title">Game update</h2>
+        ${g ? `
+        <dl class="kv">
+          <dt>Branch</dt><dd class="y">${esc(g.branch ?? "?")}</dd>
+          <dt>Tracking</dt><dd>${esc(g.upstream ?? "none")}</dd>
+          <dt>Status</dt><dd>${sync}</dd>
+          <dt>Changes</dt><dd>${g.dirty ? `<span class="bad">${g.dirty} uncommitted</span>` : `<span class="good">None</span>`}</dd>
+        </dl>
+        ${g.last ? `<div class="commit osrs-inset"><code>${esc(g.last.hash)}</code> ${esc(g.last.subject)} <span class="when">- ${esc(g.last.when)}</span></div>` : ""}
+        ${g.upstream ? `<div class="links"><button type="button" class="stone" ${b("pull")} data-act="pull" title="git pull --ff-only">${ICON.update}${g.behind ? `Update (${g.behind} new)` : "Update"}</button></div>` : ""}`
+        : `<p class="rs" style="margin:0;color:#e8dcc0">Loading...</p>`}
+      </section>
+      <section class="panel osrs">
+        <h2 class="rs-title">Options</h2>
+        <div class="options">
+          <label class="osrs-check"><input type="checkbox" data-flag="autostart" ${s.autostart ? "checked" : ""}><span class="box" aria-hidden="true"></span><span>Launch when the panel opens</span></label>
+          <p class="hint">Starts this world whenever the admin panel starts.</p>
+          <label class="osrs-check"><input type="checkbox" data-flag="autorestart" ${s.autorestart ? "checked" : ""}><span class="box" aria-hidden="true"></span><span>Restart after a crash</span></label>
+          <p class="hint">Waits 5 s, 15 s, 30 s, 1 min, 2 min, then 5 min; gives up after 6 crashes in 15 minutes.</p>
+        </div>
+      </section>
+    </div>
+    ${s.main ? "" : `
+    <div class="danger-zone">
+      <h2 class="rs-title">Danger zone</h2>
+      <p>Removing World ${s.world.number} deletes its folder (${esc(folderOf(s))}), including its player saves. The <code>${esc(activityOf(s))}</code> branch is kept.</p>
+      <button type="button" class="stone red" ${running(s) || b("remove") ? "disabled" : ""} data-remove
+        title="${running(s) ? "Shut the world down first" : "Remove this world"}">${ICON.trash}Remove world</button>
+    </div>`}`);
   tickUptime();
 }
 
-// ---- console ----
-
-function lineClass(line) {
-  if (line.startsWith("[admin]")) return "l-admin";
-  if (/\b(error|exception|failed|fatal)\b/i.test(line)) return "l-err";
-  if (/\bwarn(ing)?\b/i.test(line)) return "l-warn";
-  return "";
+function tickUptime() {
+  const s = current();
+  const el = document.getElementById("uptime");
+  if (el) el.textContent = s?.startedAt ? duration(Date.now() - s.startedAt) : "-";
 }
-function renderLogs() {
-  const body = $("#logs-body");
+
+// ---- remove dialog ----
+
+function openRemove() {
+  const s = current();
+  if (!s) return;
+  const changes = s.git?.changes ?? [];
+  $("#remove-title").textContent = `Remove World ${s.world.number}?`;
+  $("#remove-text").textContent = `This deletes ${s.dir}, including its player saves and logs. The branch ${activityOf(s)} is kept, so you can create the world again later.`;
+  $("#remove-changes").hidden = changes.length === 0;
+  $("#remove-list").innerHTML = changes.map((c) => `<li>${esc(c)}</li>`).join("");
+  $("#remove-discard").checked = false;
+  $("#remove-confirm").disabled = changes.length > 0;
+  $("#remove-dialog").dataset.id = s.id;
+  $("#remove-dialog").dataset.discard = changes.length > 0 ? "1" : "";
+  $("#remove-dialog").showModal();
+}
+$("#remove-discard").onchange = (e) => { $("#remove-confirm").disabled = !e.target.checked; };
+$("#remove-dialog").addEventListener("close", () => {
+  const d = $("#remove-dialog");
+  if (d.returnValue !== "ok") return;
+  act(d.dataset.id, "remove", { body: { discard: d.dataset.discard === "1" && $("#remove-discard").checked } });
+});
+
+// ---- chatbox console ----
+
+function parse(line) {
+  const m = /^\[(server|client)\]\s?(.*)$/.exec(line);
+  if (m) return { who: m[1], text: m[2] };
+  if (line.startsWith("[admin]")) return { who: "admin", text: line.slice(8) };
+  return { who: "", text: line };
+}
+const isError = (t) => /\b(error|exception|failed|fatal|crash(ed)?)\b/i.test(t);
+const isWarn = (t) => /\bwarn(ing)?\b/i.test(t);
+const WHO = { server: "Server", client: "Client", admin: "Panel" };
+
+function renderChat() {
+  const body = $("#chat-body");
   if (!selected) { body.innerHTML = ""; return; }
-  const filter = $("#logs-filter").value.toLowerCase();
   const all = logLines.get(selected);
-  if (!all) { body.innerHTML = `<span class="empty">Loading…</span>`; return; }
-  const lines = all.filter((e) => !filter || e.line.toLowerCase().includes(filter));
+  if (!all) { body.innerHTML = `<span class="empty">Loading...</span>`; return; }
+  const q = $("#chat-search").value.toLowerCase();
+  const lines = [];
+  for (const e of all.slice(-3000)) {
+    const p = parse(e.line);
+    if (chatFilter === "error" ? !isError(p.text) : chatFilter !== "all" && p.who !== chatFilter) continue;
+    if (q && !e.line.toLowerCase().includes(q)) continue;
+    lines.push(p);
+  }
   const s = current();
   if (lines.length === 0) {
-    body.innerHTML = `<span class="empty">${filter ? "No lines match." : s?.external
-      ? "This server was started from a terminal; its output is there."
-      : "No output yet. Start the server to see its console here."}</span>`;
+    body.innerHTML = `<span class="empty">${q || chatFilter !== "all" ? "Nothing matches." : s?.external
+      ? "This world was launched from a terminal; its console output is there."
+      : "Welcome to the console. Launch the world to see its messages here."}</span>`;
     return;
   }
-  body.innerHTML = lines.slice(-2000).map((e) => `<span class="${lineClass(e.line)}">${esc(e.line)}</span>`).join("\n");
-  if ($("#logs-follow").checked) body.scrollTop = body.scrollHeight;
+  body.innerHTML = lines.slice(-2000).map((p) => {
+    const cls = p.who === "admin" ? "admin-line" : isError(p.text) ? "err" : isWarn(p.text) ? "warn" : "";
+    const who = p.who ? `<span class="who ${p.who}">${WHO[p.who]}:</span> ` : "";
+    return `<span class="ln">${who}<span class="${cls}">${esc(p.text)}</span></span>`;
+  }).join("");
+  if ($("#chat-follow").checked) body.scrollTop = body.scrollHeight;
 }
 async function loadLogs(id) {
   const res = await fetch(`/api/logs?id=${encodeURIComponent(id)}`);
   if (res.ok) logLines.set(id, (await res.json()).lines);
-  if (id === selected) renderLogs();
+  if (id === selected) renderChat();
 }
-$("#logs-filter").oninput = renderLogs;
-$("#logs-follow").onchange = renderLogs;
-let logQueued = false;
+document.querySelector(".chat-tabs").addEventListener("click", (e) => {
+  const tab = e.target.closest("[role=tab]");
+  if (!tab) return;
+  chatFilter = tab.dataset.filter;
+  for (const t of document.querySelectorAll(".chat-tabs [role=tab]")) t.setAttribute("aria-selected", String(t === tab));
+  renderChat();
+});
+$("#chat-search").oninput = renderChat;
+$("#chat-follow").onchange = renderChat;
+let chatQueued = false;
 
-// ---- selection ----
+// ---- selection, menu ----
 
 function select(id) {
   if (!state.servers.some((s) => s.id === id)) id = state.servers[0]?.id ?? null;
@@ -255,24 +330,23 @@ function select(id) {
   selected = id;
   if (id) store.set("tsps-admin:selected", id);
   if (id && location.hash !== `#${id}`) history.replaceState(null, "", `#${id}`);
-  renderList();
-  renderDetail();
+  renderSwitcher();
+  renderWorld();
   if (changed) {
-    $("#logs-filter").value = "";
-    renderLogs();
+    $("#chat-search").value = "";
+    renderChat();
     if (id) loadLogs(id);
   }
   closeMenu();
 }
-
 function closeMenu() {
-  $("#sidebar").classList.remove("open");
+  $("#switcher").classList.remove("open");
   $("#menu-backdrop").hidden = true;
   $("#menu-toggle").setAttribute("aria-expanded", "false");
 }
 $("#menu-toggle").onclick = () => {
-  const open = !$("#sidebar").classList.contains("open");
-  $("#sidebar").classList.toggle("open", open);
+  const open = !$("#switcher").classList.contains("open");
+  $("#switcher").classList.toggle("open", open);
   $("#menu-backdrop").hidden = !open;
   $("#menu-toggle").setAttribute("aria-expanded", String(open));
 };
@@ -280,15 +354,17 @@ $("#menu-backdrop").onclick = closeMenu;
 
 // ---- events ----
 
-$("#server-list").addEventListener("click", (e) => {
-  const item = e.target.closest(".server-item");
-  if (item) select(item.dataset.id);
+$("#world-list").addEventListener("click", (e) => {
+  const row = e.target.closest(".world-row");
+  if (row) select(row.dataset.id);
 });
-$("#detail").addEventListener("click", (e) => {
+$("#world").addEventListener("click", (e) => {
+  if (!selected) return;
+  if (e.target.closest("button[data-remove]")) return openRemove();
   const btn = e.target.closest("button[data-act]");
-  if (btn && selected) act(selected, btn.dataset.act, btn.dataset.confirm);
+  if (btn) act(selected, btn.dataset.act, { confirmText: btn.dataset.confirm });
 });
-$("#detail").addEventListener("change", (e) => {
+$("#world").addEventListener("change", (e) => {
   const flag = e.target.dataset?.flag;
   if (flag && selected) post(`/api/servers/${selected}/flags`, { [flag]: e.target.checked }).catch((err) => toast(err.message));
 });
@@ -309,13 +385,13 @@ function connect() {
   es.addEventListener("state", (e) => {
     state = JSON.parse(e.data);
     if (!selected || !current()) select(location.hash.slice(1) || store.get("tsps-admin:selected"));
-    else { renderList(); renderDetail(); }
+    else { renderSwitcher(); renderWorld(); }
   });
   es.addEventListener("task", (e) => {
     const t = JSON.parse(e.data);
     const i = state.tasks.findIndex((x) => x.id === t.id);
     if (i >= 0) state.tasks[i] = t; else state.tasks.unshift(t);
-    renderList();
+    renderSwitcher();
   });
   es.addEventListener("log", (e) => {
     const { id, t, line } = JSON.parse(e.data);
@@ -323,7 +399,7 @@ function connect() {
     if (!arr) return; // fetched in full when first selected
     arr.push({ t, line });
     if (arr.length > 3000) arr.splice(0, arr.length - 3000);
-    if (id === selected && !logQueued) { logQueued = true; requestAnimationFrame(() => { logQueued = false; renderLogs(); }); }
+    if (id === selected && !chatQueued) { chatQueued = true; requestAnimationFrame(() => { chatQueued = false; renderChat(); }); }
   });
 }
 connect();

@@ -65,6 +65,8 @@ export async function gitInfo(dir) {
     ahead: 0,
     behind: 0,
     dirty: status.code === 0 ? status.stdout.split(/\r?\n/).filter(Boolean).length : null,
+    // `XY path` lines from `git status --porcelain`, so the page can show what a removal would discard.
+    changes: status.code === 0 ? status.stdout.split(/\r?\n/).filter(Boolean).slice(0, 30) : [],
     last: null,
   };
   if (last.code === 0 && last.stdout.trim()) {
