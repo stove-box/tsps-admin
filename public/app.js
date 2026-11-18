@@ -645,15 +645,14 @@ function renderWorld() {
           <label class="osrs-check"><input type="checkbox" data-flag="autorestart" ${s.autorestart ? "checked" : ""}><span class="box" aria-hidden="true"></span><span>Restart after a crash</span></label>
           <p class="hint">Waits 5 s, 15 s, 30 s, 1 min, 2 min, then 5 min; gives up after 6 crashes in 15 minutes.</p>
         </div>
+        ${s.main ? "" : `
+        <div class="remove-world">
+          <button type="button" class="stone red" ${running(s) || b("remove") ? "disabled" : ""} data-remove
+            title="${running(s) ? "Shut the world down first" : `Remove World ${s.world.number}`}">${ICON.trash}Remove world</button>
+          <p class="hint">Deletes its folder and player saves; the ${esc(activityOf(s))} branch is kept.</p>
+        </div>`}
       </section>
-    </div>
-    ${s.main ? "" : `
-    <div class="danger-zone">
-      <h2 class="rs-title">Danger zone</h2>
-      <p>Removing World ${s.world.number} deletes its folder (${esc(folderOf(s))}), including its player saves. The <code>${esc(activityOf(s))}</code> branch is kept.</p>
-      <button type="button" class="stone red" ${running(s) || b("remove") ? "disabled" : ""} data-remove
-        title="${running(s) ? "Shut the world down first" : "Remove this world"}">${ICON.trash}Remove world</button>
-    </div>`}`);
+    </div>`);
   tickUptime();
   tickTimers();
   if (menuFor() && menuFor() !== s.id && menuFor() !== "new") closeTypeMenu();

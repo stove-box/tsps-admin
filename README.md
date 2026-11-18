@@ -56,7 +56,7 @@ FreeToPlay plugin is off, as in the server), and from the live world once it's o
   checkout's types; the type is written into the new world's `world.local.json` right after
   `wt new`, so its first launch is already that type. It runs `scripts/wt new <branch>
   [base]` through Git Bash and opens the new world when it appears.
-- **Remove world** (Danger zone, shut-down worlds only) runs `scripts/wt rm`. If the worktree has
+- **Remove world** (foot of the Options panel, shut-down worlds only) runs `scripts/wt rm`. If the worktree has
   uncommitted changes, the dialog lists them and removes it with `git worktree remove --force` only
   after you tick "Discard these changes". The branch is always kept.
 - **Ctrl+C** in the panel's console shuts down the worlds it launched (players are saved), then exits.
