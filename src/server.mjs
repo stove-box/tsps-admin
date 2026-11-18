@@ -106,6 +106,7 @@ const ACTIONS = {
   "game-restart": (id) => fleet.game(id, "restart"),
   pull: (id) => fleet.pull(id),
   "cancel-update": (id) => fleet.cancelUpdate(id),
+  "open-folder": (id) => fleet.openFolder(id),
   remove: (id, body) => fleet.removeWorktree(id, { discard: body.discard === true }),
 };
 

@@ -405,6 +405,15 @@ export class Fleet extends EventEmitter {
     if (rec.probe?.players != null) rec.lastPlayers = rec.probe.players;
   }
 
+  /** Shows the world's folder in the file manager (Explorer, Finder or the desktop's default). */
+  openFolder(id) {
+    const rec = this.get(id);
+    const [cmd, args] = process.platform === "win32" ? ["explorer.exe", [rec.dir]]
+      : process.platform === "darwin" ? ["open", [rec.dir]] : ["xdg-open", [rec.dir]];
+    // Explorer exits 1 even when it opened the window, so the exit code means nothing here.
+    spawn(cmd, args, { detached: true, stdio: "ignore", windowsHide: false }).on("error", () => {}).unref();
+  }
+
   /** Cancels the in-game update countdown, and the settings change waiting on it. */
   async cancelUpdate(id) {
     const rec = this.get(id);

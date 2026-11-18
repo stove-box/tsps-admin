@@ -189,6 +189,17 @@ setInterval(() => { if (state.tasks?.length) renderJobs(); }, 1000);
 
 // ---- selected world ----
 
+/** One Connection row: what it is, the address (a link when it opens in a browser), and Copy. */
+function address(label, value, { href = null, hint = "" } = {}) {
+  const shown = esc(value.replace(/^https?:\/\//, ""));
+  return `
+    <li class="address" ${hint ? `title="${esc(hint)}"` : ""}>
+      <span class="addr-label">${esc(label)}</span>
+      ${href ? `<a class="addr-value link" href="${esc(href)}" target="_blank" rel="noopener">${shown}</a>` : `<span class="addr-value">${shown}</span>`}
+      <button type="button" class="addr-btn" data-copy="${esc(value)}" aria-label="Copy ${esc(label)} address">Copy</button>
+    </li>`;
+}
+
 function heroActions(s) {
   const b = (a) => (busy.has(`${s.id}:${a}`) ? "disabled" : "");
   const n = s.world.number;
@@ -197,23 +208,38 @@ function heroActions(s) {
     ? `<a class="play" href="${esc(s.links.client)}" target="_blank" rel="noopener">Play<small>World ${n}</small></a>`
     : `<span class="play off" aria-disabled="true">Play<small>${esc(STATUS[s.status] ?? s.status)}</small></span>`;
 
-  let power;
-  if (running(s)) {
+  // Three buttons of one size under Play, always in the same places: power, restart, settings.
+  // One that can't be used now stays, greyed, with a tooltip saying why.
+  const off = (icon, label, why) => `<button type="button" class="stone" disabled title="${esc(why)}">${icon}${label}</button>`;
+  const shutDown = () => {
     const confirmText = s.external
       ? `Shut down World ${n}? It was launched from a terminal: online players are saved, then the processes on its ports are ended.`
       : `Shut down World ${n}? Online players are saved first.`;
-    power = `<button type="button" class="stone red" ${stopping ? "disabled" : b("stop")} data-act="stop" data-confirm="${esc(confirmText)}">${ICON.power}${stopping ? "Shutting down" : "Shut down"}</button>`;
-    if (s.status === "game-stopped" || s.status === "failed") {
-      power = `<button type="button" class="stone gold" ${b("game-start")} data-act="game-start">${ICON.power}Start world</button>` + power;
-    }
+    return `<button type="button" class="stone red" ${stopping ? "disabled" : b("stop")} data-act="stop" data-confirm="${esc(confirmText)}"
+      title="Save players and stop World ${n}">${ICON.power}${stopping ? "Stopping" : "Shut down"}</button>`;
+  };
+  const gameDown = running(s) && (s.status === "game-stopped" || s.status === "failed");
+
+  let first;
+  let second;
+  if (!running(s)) {
+    first = `<button type="button" class="stone gold" ${b("start")} data-act="start" title="Start World ${n}">${ICON.power}Launch</button>`;
+    second = off(ICON.restart, "Restart", "Launch the world first");
+  } else if (gameDown) {
+    // The process is up but the game isn't: start the game, or shut the whole world down.
+    first = `<button type="button" class="stone gold" ${b("game-start")} data-act="game-start" title="Start the game again">${ICON.power}Start</button>`;
+    second = shutDown();
   } else {
-    power = `<button type="button" class="stone gold" ${b("start")} data-act="start">${ICON.power}Launch world</button>`;
+    first = shutDown();
+    const act = s.managed ? "restart" : "game-restart";
+    second = stopping || !(s.managed || s.panelUp)
+      ? off(ICON.restart, "Restart", stopping ? "World is shutting down" : "Restart it from the terminal it was launched in")
+      : `<button type="button" class="stone" ${b(act)} data-act="${act}" title="Save players and restart World ${n}">${ICON.restart}Restart</button>`;
   }
-  const canRestart = running(s) && !stopping && (s.managed || s.panelUp);
-  const restart = canRestart
-    ? `<button type="button" class="stone icon" ${b(s.managed ? "restart" : "game-restart")} data-act="${s.managed ? "restart" : "game-restart"}" title="Restart server" aria-label="Restart server">${ICON.restart}</button>`
-    : "";
-  return `${play}<div class="row">${power}${restart}</div>`;
+  const settings = s.links.worldAdmin && s.panelUp
+    ? `<a class="stone" href="${esc(s.links.worldAdmin)}" target="_blank" rel="noopener" title="Open World ${n}'s settings page">${ICON.settings}Settings</a>`
+    : off(ICON.settings, "Settings", "The world settings page opens while the world is running");
+  return `${play}<div class="world-buttons">${first}${second}${settings}</div>`;
 }
 
 /**
@@ -496,15 +522,17 @@ function renderWorld() {
     <div class="panels">
       <section class="panel osrs">
         <h2 class="rs-title">Connection</h2>
-        <dl class="kv">
-          <dt>Game client</dt><dd class="y">localhost:${p.client}</dd>
-          <dt>Game server</dt><dd>${p.game}</dd>
-          <dt>World settings</dt><dd>${p.worldAdmin}</dd>
-          <dt>Agent MCP</dt><dd>${p.mcp}</dd>
-          <dt>Gateway</dt><dd>${p.gateway}</dd>
-          <dt>Folder</dt><dd>${esc(folderOf(s))}</dd>
-        </dl>
-        ${s.links.worldAdmin && s.panelUp ? `<div class="links"><a class="stone" href="${esc(s.links.worldAdmin)}" target="_blank" rel="noopener">${ICON.settings}World settings</a></div>` : ""}
+        <ul class="addresses">
+          ${address("Game client", s.links.client, { href: running(s) ? s.links.client : null, hint: "Open in a browser to play" })}
+          ${address("Game server", `localhost:${p.game}`, { hint: "The game's WebSocket port" })}
+          ${address("Agent MCP", s.links.mcp, { hint: "For Claude Code: claude mcp add --transport http tsps <address>" })}
+          ${address("RuneLite gateway", `localhost:${p.gateway}`, { hint: "For the official client through RSProx" })}
+          <li class="address">
+            <span class="addr-label">Folder</span>
+            <span class="addr-value" title="${esc(s.dir)}">${esc(folderOf(s))}</span>
+            <button type="button" class="addr-btn" ${b("open-folder")} data-act="open-folder" title="Show the folder in Explorer">Open</button>
+          </li>
+        </ul>
       </section>
       <section class="panel osrs">
         <h2 class="rs-title">Game update</h2>
@@ -666,6 +694,12 @@ $("#world").addEventListener("click", (e) => {
   if (!selected) return;
   if (e.target.closest("button[data-remove]")) return openRemove();
   if (e.target.closest("button[data-type-menu]")) return menu.hidden ? openTypeMenu(worldTypeMenu()) : closeTypeMenu(true);
+  const copy = e.target.closest("button[data-copy]");
+  if (copy) {
+    return navigator.clipboard.writeText(copy.dataset.copy)
+      .then(() => { copy.textContent = "Copied"; setTimeout(() => (copy.textContent = "Copy"), 1500); })
+      .catch(() => toast("Couldn't copy; select the address and copy it by hand."));
+  }
   const btn = e.target.closest("button[data-act]");
   if (btn) act(selected, btn.dataset.act, { confirmText: btn.dataset.confirm });
 });
