@@ -217,53 +217,58 @@ function heroActions(s) {
 }
 
 /**
- * While the world goes down or comes back, this one-line strip takes the stat tiles' place (same
- * height, so the page never grows): the in-game update countdown ("System update in: 0:47", as the
- * game shows it), a shutdown, restart or launch step by step with a running clock, or the wait
- * before an automatic restart after a crash. The longer explanation is the strip's tooltip.
+ * While the world goes down or comes back, this takes the stat tiles' place, drawn like one wide tile
+ * (same height, so the page never grows): the in-game update countdown ("System update in 0:47"),
+ * a shutdown, restart or launch with a running clock and the step it's on, or the wait before an
+ * automatic restart after a crash. The longer explanation is its tooltip.
  */
 function transitionBanner(s) {
   const n = s.world.number;
+  const tile = ({ icon, kind, title, line, tip, extra = "" }) => `
+    <div class="transit osrs ${kind}" role="status" ${tip ? `title="${esc(tip)}"` : ""}>
+      <span class="orb">${icon}</span>
+      <div class="tr-text"><div class="v">${title}</div><div class="k">${esc(line)}</div></div>
+      ${extra}
+    </div>`;
+
   const cd = s.countdown;
   if (cd && cd.endsAt > Date.now()) {
-    const why = cd.reason === "settings"
-      ? `World ${n} restarts to apply its new settings. Players are saved first.`
-      : `An update was started in game. World ${n} restarts when it reaches 0:00; players are saved first.`;
-    return `
-      <div class="transit update" role="status" title="${esc(why)}">
-        <div class="tr-title">System update in: <span class="tr-clock" data-until="${cd.endsAt}"></span></div>
-        <div class="tr-note">${cd.reason === "settings" ? "Restarting for the new world settings" : "Update started in game"}</div>
-        <button type="button" class="stone" ${busy.has(`${s.id}:cancel-update`) ? "disabled" : ""} data-act="cancel-update">Cancel</button>
-        <div class="tr-bar"><span data-bar-until="${cd.endsAt}" data-total="${(cd.total || 60) * 1000}"></span></div>
-      </div>`;
+    return tile({
+      icon: ICON.clock, kind: "update",
+      title: `System update in <span data-until="${cd.endsAt}"></span>`,
+      line: cd.reason === "settings" ? "Restarting to apply the new world settings" : "Update started in game",
+      tip: `World ${n} restarts when it reaches 0:00. Players are saved first.`,
+      extra: `<button type="button" class="stone" ${busy.has(`${s.id}:cancel-update`) ? "disabled" : ""} data-act="cancel-update">Cancel</button>
+        <div class="tr-bar"><span data-bar-until="${cd.endsAt}" data-total="${(cd.total || 60) * 1000}"></span></div>`,
+    });
   }
   const t = s.transition;
   if (t) {
-    const players = t.players ? `Save ${t.players} player${t.players === 1 ? "" : "s"}` : "Save players";
+    const saving = t.players ? `Saving ${t.players} player${t.players === 1 ? "" : "s"}` : "Saving players";
     const steps = {
-      shutdown: [[players, "saving"], ["Close the server", "closing"]],
-      restart: [[players, "saving"], ["Start the server", "starting"], ["Online", "online"]],
-      launch: [["Start the server", "starting"], ["Online", "online"]],
+      shutdown: [[saving, "saving"], ["Closing the server", "closing"]],
+      restart: [[saving, "saving"], ["Starting the server", "starting"]],
+      launch: [["Starting the server", "starting"]],
     }[t.kind] ?? [];
     const at = Math.max(0, steps.findIndex(([, phase]) => phase === t.phase));
-    const title = { shutdown: "Shutting down", restart: "Restarting", launch: "Launching" }[t.kind] ?? "Working";
-    const sub = t.phase === "saving" && t.deadline
-      ? `If saving takes longer than ${clock(t.deadline - t.startedAt)}, the server is stopped anyway.`
-      : t.phase === "starting" ? "Usually ready in under a minute; the console below shows progress." : "";
-    return `
-      <div class="transit ${esc(t.kind)}" role="status" ${sub ? `title="${esc(sub)}"` : ""}>
-        <div class="tr-title">${title} World ${n} <span class="tr-clock" data-since="${t.startedAt}"></span></div>
-        <ol class="tr-steps">${steps.map(([label], i) =>
-          `<li class="${i < at ? "done" : i === at ? "now" : ""}">${esc(label)}</li>`).join("")}</ol>
-        <div class="tr-bar busy"><span></span></div>
-      </div>`;
+    const step = steps[at]?.[0] ?? "Working";
+    return tile({
+      icon: ICON.power, kind: t.kind,
+      title: `${{ shutdown: "Shutting down", restart: "Restarting", launch: "Launching" }[t.kind] ?? "Working"} World ${n}
+        <span class="tr-clock" data-since="${t.startedAt}"></span>`,
+      line: steps.length > 1 ? `${step} (step ${at + 1} of ${steps.length})` : step,
+      tip: t.phase === "saving" && t.deadline
+        ? `If saving takes longer than ${clock(t.deadline - t.startedAt)}, the server is stopped anyway.`
+        : t.phase === "starting" ? "Usually ready in under a minute; the console below shows progress." : "",
+    });
   }
   if (s.retryAt && s.retryAt > Date.now()) {
-    return `
-      <div class="transit restart" role="status" title="Restart after a crash is on for World ${n}. Shut down stops it from trying again.">
-        <div class="tr-title">Restarting after a crash in <span class="tr-clock" data-until="${s.retryAt}"></span></div>
-        <div class="tr-note">Shut down to stop it trying again</div>
-      </div>`;
+    return tile({
+      icon: ICON.restart, kind: "restart",
+      title: `Restarting after a crash in <span data-until="${s.retryAt}"></span>`,
+      line: "Shut down to stop it trying again",
+      tip: `Restart after a crash is on for World ${n}.`,
+    });
   }
   return "";
 }
