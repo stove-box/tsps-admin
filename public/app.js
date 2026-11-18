@@ -184,7 +184,7 @@ function typePicker(s) {
   return `
     <div class="type-pick">
       <button type="button" id="type-select" class="type-select" data-type-menu aria-haspopup="listbox" aria-label="World type: ${esc(typeName(s.world))}"
-        aria-expanded="${menuFor === s.id}" aria-controls="type-menu" ${changing ? "disabled" : ""}
+        aria-expanded="${menuFor() === s.id}" aria-controls="type-menu" ${changing ? "disabled" : ""}
         title="${changing ? "Wait until the world has finished starting or shutting down" : "Change the world type (restarts the server)"}">
         ${worldIcon(s.world)}${label}<span class="caret" aria-hidden="true"></span>
       </button>
@@ -192,18 +192,21 @@ function typePicker(s) {
 }
 
 // ---- World type dropdown (a listbox, so each type can show its world icon) ----
+// One list serves every picker: the world heading's and the New world dialog's. `menuCtx` says which
+// opened it: { owner, trigger() (looked up each time, since the world view is redrawn), types, value, choose }.
 
 const menu = $("#type-menu");
-let menuFor = null; // the world whose types the open list shows
+let menuCtx = null;
 let menuIndex = 0;
 const menuOptions = () => [...menu.querySelectorAll("[role=option]")];
+const menuFor = () => menuCtx?.owner ?? null;
 
-function openTypeMenu() {
-  const s = current();
-  const trigger = $("#type-select");
-  if (!s || !trigger || trigger.disabled) return;
+function openTypeMenu(ctx) {
+  if (!ctx) return;
+  const trigger = ctx.trigger();
+  if (!trigger || trigger.disabled || !ctx.types?.length) return;
   const groups = new Map();
-  for (const t of s.world.types) {
+  for (const t of ctx.types) {
     if (!groups.has(t.group)) groups.set(t.group, []);
     groups.get(t.group).push(t);
   }
@@ -212,12 +215,14 @@ function openTypeMenu() {
     <div class="menu-group" role="group" aria-label="${esc(group)}">
       <div class="menu-label" aria-hidden="true">${esc(group)}</div>
       ${types.map((t) => `
-        <div class="menu-opt" role="option" id="type-opt-${i++}" data-type="${esc(t.id)}" aria-selected="${t.id === s.world.type}">
+        <div class="menu-opt" role="option" id="type-opt-${i++}" data-type="${esc(t.id)}" aria-selected="${t.id === ctx.value}">
           ${worldIcon({ type: t.id, typeLabel: t.label, members: t.id !== "f2p" })}<span>${esc(t.label)}</span>
         </div>`).join("")}
     </div>`).join("");
-  menuFor = s.id;
-  menuIndex = Math.max(0, menuOptions().findIndex((o) => o.dataset.type === s.world.type));
+  // A modal dialog sits in the browser's top layer, above everything else: the list must be inside it.
+  (trigger.closest("dialog") ?? document.body).appendChild(menu);
+  menuCtx = ctx;
+  menuIndex = Math.max(0, menuOptions().findIndex((o) => o.dataset.type === ctx.value));
   menu.hidden = false;
   trigger.setAttribute("aria-expanded", "true");
   positionMenu();
@@ -226,8 +231,9 @@ function openTypeMenu() {
 }
 
 function positionMenu() {
-  const trigger = $("#type-select");
-  if (!trigger || menu.hidden) return closeTypeMenu();
+  if (menu.hidden) return;
+  const trigger = menuCtx?.trigger();
+  if (!trigger) return closeTypeMenu();
   const r = trigger.getBoundingClientRect();
   menu.style.minWidth = `${Math.max(r.width, 260)}px`;
   const h = menu.offsetHeight;
@@ -240,8 +246,9 @@ function positionMenu() {
 function closeTypeMenu(refocus = false) {
   if (menu.hidden) return;
   menu.hidden = true;
-  menuFor = null;
-  const trigger = $("#type-select");
+  const trigger = menuCtx?.trigger();
+  menuCtx = null;
+  document.body.appendChild(menu);
   trigger?.setAttribute("aria-expanded", "false");
   if (refocus) trigger?.focus();
 }
@@ -256,9 +263,21 @@ function highlight() {
 }
 
 function chooseType(type) {
-  const s = current();
+  const ctx = menuCtx;
   closeTypeMenu(true);
-  if (s && type && type !== s.world.type) changeWorldType(type);
+  if (ctx && type) ctx.choose(type);
+}
+
+/** The world heading's picker: changes the selected world's type. */
+function worldTypeMenu() {
+  const s = current();
+  return s && {
+    owner: s.id,
+    trigger: () => $("#type-select"),
+    types: s.world.types,
+    value: s.world.type,
+    choose: (type) => { if (type !== current()?.world.type) changeWorldType(type); },
+  };
 }
 
 menu.addEventListener("keydown", (e) => {
@@ -268,7 +287,8 @@ menu.addEventListener("keydown", (e) => {
   else if (e.key === "Home") menuIndex = 0;
   else if (e.key === "End") menuIndex = opts.length - 1;
   else if (e.key === "Enter" || e.key === " ") return e.preventDefault(), chooseType(opts[menuIndex]?.dataset.type);
-  else if (e.key === "Escape") return e.preventDefault(), closeTypeMenu(true);
+  // Escape closes just the list, not the dialog around it.
+  else if (e.key === "Escape") return e.preventDefault(), e.stopPropagation(), closeTypeMenu(true);
   else if (e.key === "Tab") return closeTypeMenu();
   else return;
   e.preventDefault();
@@ -387,7 +407,7 @@ function renderWorld() {
         title="${running(s) ? "Shut the world down first" : "Remove this world"}">${ICON.trash}Remove world</button>
     </div>`}`);
   tickUptime();
-  if (menuFor && menuFor !== s.id) closeTypeMenu();
+  if (menuFor() && menuFor() !== s.id && menuFor() !== "new") closeTypeMenu();
   else positionMenu();
 }
 
@@ -514,14 +534,14 @@ $("#world-list").addEventListener("click", (e) => {
 $("#world").addEventListener("click", (e) => {
   if (!selected) return;
   if (e.target.closest("button[data-remove]")) return openRemove();
-  if (e.target.closest("button[data-type-menu]")) return menu.hidden ? openTypeMenu() : closeTypeMenu(true);
+  if (e.target.closest("button[data-type-menu]")) return menu.hidden ? openTypeMenu(worldTypeMenu()) : closeTypeMenu(true);
   const btn = e.target.closest("button[data-act]");
   if (btn) act(selected, btn.dataset.act, { confirmText: btn.dataset.confirm });
 });
 $("#world").addEventListener("keydown", (e) => {
   if (e.target.closest("button[data-type-menu]") && (e.key === "ArrowDown" || e.key === "ArrowUp")) {
     e.preventDefault();
-    openTypeMenu();
+    openTypeMenu(worldTypeMenu());
   }
 });
 $("#world").addEventListener("change", (e) => {
@@ -552,6 +572,32 @@ function newWorldPlan(branch) {
 }
 
 let pendingWorld = null; // { folder, number, task } until the new world shows up in the list
+let newType = "members";
+
+/** A new world starts from main, so it offers the main checkout's types. */
+function newWorldTypes() {
+  return state.servers.find((s) => s.main)?.world.types
+    ?? [{ id: "members", label: "Members", group: "Standard" }, { id: "f2p", label: "Free-to-play", group: "Standard" }];
+}
+const newTypeInfo = () => newWorldTypes().find((t) => t.id === newType) ?? newWorldTypes()[0];
+const newTypeWorld = () => ({ type: newTypeInfo().id, typeLabel: newTypeInfo().label, members: newTypeInfo().id !== "f2p" });
+
+function renderNewType() {
+  $("#new-type").innerHTML = `${worldIcon(newTypeWorld())}<span class="type-label">${esc(newTypeInfo().label)}</span><span class="caret" aria-hidden="true"></span>`;
+}
+
+const newTypeMenu = () => ({
+  owner: "new",
+  trigger: () => $("#new-type"),
+  types: newWorldTypes(),
+  value: newTypeInfo().id,
+  choose: (type) => { newType = type; renderNewType(); updateNewWorld(); },
+});
+$("#new-type").addEventListener("click", () => (menu.hidden ? openTypeMenu(newTypeMenu()) : closeTypeMenu(true)));
+$("#new-type").addEventListener("keydown", (e) => {
+  if (e.key === "ArrowDown" || e.key === "ArrowUp") { e.preventDefault(); openTypeMenu(newTypeMenu()); }
+});
+$("#new-dialog").addEventListener("close", () => closeTypeMenu());
 
 function updateNewWorld() {
   const name = $("#new-name").value;
@@ -560,8 +606,8 @@ function updateNewWorld() {
   const error = !name.trim() ? "" : !branch ? "Use letters, numbers and dashes." : taken ? `World ${taken.world.number} already uses this name.` : "";
   const plan = newWorldPlan(branch);
   $("#new-preview").innerHTML = branch && !error ? `
-    <img class="star sprite members" src="members-world.png" width="16" height="16" alt="">
-    <div><div class="new-number">World ${plan.number}</div>
+    ${worldIcon(newTypeWorld())}
+    <div><div class="new-number">World ${plan.number} <span class="new-type">${esc(newTypeInfo().label)}</span></div>
     <div class="new-detail">Branch <code>${esc(branch)}</code> in <code>${esc(plan.folder)}</code></div></div>` : "";
   $("#new-error").textContent = error;
   $("#new-error").hidden = !error;
@@ -572,6 +618,8 @@ function updateNewWorld() {
 $("#new").onclick = () => {
   $("#new-form").reset();
   $("#new-form").querySelector(".advanced").open = false;
+  newType = "members";
+  renderNewType();
   updateNewWorld();
   $("#new-dialog").showModal();
   $("#new-name").focus();
@@ -585,10 +633,11 @@ $("#new-form").addEventListener("submit", async (e) => {
   const base = $("#new-base").value.trim();
   $("#new-create").disabled = true;
   try {
-    const r = await post("/api/worktrees", { branch, base });
+    const type = newTypeInfo();
+    const r = await post("/api/worktrees", { branch, base, type: type.id });
     $("#new-dialog").close("ok");
     pendingWorld = { ...plan, task: r.task };
-    toast(`Creating World ${plan.number}. It opens here when it's ready, in a few minutes.`, "info");
+    toast(`Creating World ${plan.number} (${type.label}). It opens here when it's ready, in a few minutes.`, "info");
   } catch (err) {
     $("#new-error").textContent = err.message;
     $("#new-error").hidden = false;

@@ -74,8 +74,11 @@
     <label for="new-name">Name</label>
     <input type="text" id="new-name" name="branch" placeholder="e.g. my-new-feature" autocomplete="off" spellcheck="false"
       aria-describedby="new-preview new-error">
-    <div id="new-preview" class="new-preview" aria-live="polite"></div>
     <p id="new-error" class="field-error" role="alert" hidden></p>
+    <span class="field-label" id="new-type-label">World type</span>
+    <button type="button" id="new-type" class="type-select" data-type-menu aria-haspopup="listbox"
+      aria-labelledby="new-type-label new-type" aria-expanded="false" aria-controls="type-menu"></button>
+    <div id="new-preview" class="new-preview" aria-live="polite"></div>
     <details class="advanced">
       <summary>Advanced</summary>
       <label for="new-base">Start from</label>

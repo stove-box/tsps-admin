@@ -48,7 +48,9 @@ FreeToPlay plugin is off, as in the server), and from the live world once it's o
   updates** runs `git fetch --all --prune`; **Update** runs `git pull --ff-only`.
 - **New world** asks only for a name (made into a branch name as you type: spaces become dashes,
   characters git refuses are dropped), previews the world number, branch and folder it will get, and
-  keeps the starting point under Advanced (default `origin/main`). It runs `scripts/wt new <branch>
+  keeps the starting point under Advanced (default `origin/main`). Its World type picker offers the main
+  checkout's types; the type is written into the new world's `world.local.json` right after
+  `wt new`, so its first launch is already that type. It runs `scripts/wt new <branch>
   [base]` through Git Bash and opens the new world when it appears.
 - **Remove world** (Danger zone, shut-down worlds only) runs `scripts/wt rm`. If the worktree has
   uncommitted changes, the dialog lists them and removes it with `git worktree remove --force` only

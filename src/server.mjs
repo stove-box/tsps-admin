@@ -172,7 +172,7 @@ async function handle(req, res) {
   }
   if (url.pathname === "/api/git/fetch") return send(res, 202, { ok: true, task: fleet.fetchAll().id });
   if (url.pathname === "/api/worktrees") {
-    const task = await fleet.createWorktree(String(body.branch ?? "").trim(), String(body.base ?? "").trim());
+    const task = await fleet.createWorktree(String(body.branch ?? "").trim(), String(body.base ?? "").trim(), String(body.type ?? "members"));
     return send(res, 202, { ok: true, task: task.id });
   }
   return send(res, 404, { error: "Not found" });

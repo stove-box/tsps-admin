@@ -2,7 +2,7 @@ import { execFile, spawn } from "node:child_process";
 import { EventEmitter } from "node:events";
 import { createWriteStream, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import http from "node:http";
-import { basename, join, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import { childEnv, portsFor, worktreeEnv, worldAdminToken } from "./env.mjs";
 import { gitInfo, listWorktrees, samePath, stream, validBranchName } from "./git.mjs";
 import { applyChanges, availableTypes, changesFor, currentType, merge, readLayers, validate, writeLocal } from "./worldtype.mjs";
@@ -484,11 +484,32 @@ export class Fleet extends EventEmitter {
       .then((code) => { rec.gitAt = 0; return code; }));
   }
 
-  async createWorktree(branch, base) {
+  /**
+   * `scripts/wt new <branch> [base]`, then the chosen world type: written into the new worktree's
+   * world.local.json (it isn't running yet), so its first launch is already that type.
+   */
+  async createWorktree(branch, base, type = "members") {
     if (!(await validBranchName(branch))) throw Object.assign(new Error("Not a valid branch name."), { status: 400 });
     if (base && !/^[A-Za-z0-9._\/-]+$/.test(base)) throw Object.assign(new Error("Not a valid base ref."), { status: 400 });
+    if (!/^(members|f2p|hardcore|league:\d+)$/.test(type)) throw Object.assign(new Error("Unknown world type."), { status: 400 });
     const args = [join(this.repo, "scripts", "wt"), "new", branch, ...(base ? [base] : [])];
-    return this.task(`wt new ${branch}${base ? ` ${base}` : ""}`, (onLine) => stream(this.bash, args, { cwd: this.repo, env: childEnv(process.env, this.repo), onLine }));
+    // Where `wt new` puts it: beside the main checkout, named after it and the branch.
+    const dir = join(dirname(this.repo), `${basename(this.repo)}-${branch.replace(/\//g, "-")}`);
+    return this.task(`New world: ${branch}`, async (onLine) => {
+      const code = await stream(this.bash, args, { cwd: this.repo, env: childEnv(process.env, this.repo), onLine });
+      if (code !== 0 || type === "members") return code;
+      await this.refresh();
+      const rec = [...this.servers.values()].find((r) => samePath(r.dir, dir));
+      try {
+        if (!rec) throw new Error(`couldn't find the new world at ${dir}`);
+        const r = await this.setWorldType(rec.id, type);
+        onLine(r.message ?? "World type set.");
+      } catch (err) {
+        // The world exists; only its type didn't take. Say so and leave it Members.
+        onLine(`World type not set (${err.message}); the world is Members. Change it from its World type menu.`);
+      }
+      return 0;
+    });
   }
 
   /**
