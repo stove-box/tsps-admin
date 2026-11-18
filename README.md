@@ -45,7 +45,11 @@ FreeToPlay plugin is off, as in the server), and from the live world once it's o
 - **Launch when the panel opens** (per world). To open the panel when you sign in to Windows, run
   `powershell -File scripts/install-startup.ps1` (`-Remove` undoes it).
 - **Game update**: branch, upstream, ahead/behind, uncommitted files and last commit. **Check for
-  updates** runs `git fetch --all --prune`; **Update** runs `git pull --ff-only`.
+  updates** runs `git fetch --all --prune`; **Update** runs `git pull --ff-only`. When the checkout's
+  `origin` is a GitHub fork (stove-box/tsps of RSPSApp/tsps) and the world follows the fork's default
+  branch, Game update also counts the commits the fork's parent has that it doesn't, and Update first
+  syncs the fork on GitHub with `gh repo sync` (fast-forward only, like GitHub's Sync fork), then
+  pulls. This needs the GitHub CLI signed in.
 - **New world** asks only for a name (made into a branch name as you type: spaces become dashes,
   characters git refuses are dropped), previews the world number, branch and folder it will get, and
   keeps the starting point under Advanced (default `origin/main`). Its World type picker offers the main

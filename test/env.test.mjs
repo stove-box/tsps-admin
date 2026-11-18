@@ -142,3 +142,11 @@ test("worlds are numbered from 1: the main checkout, then each slot", async () =
   assert.equal(worldNumber({ ports: { slot: 1 } }), 2);
   assert.equal(worldNumber({ ports: { slot: 5 } }), 6);
 });
+
+test("GitHub remotes: owner/name from https and ssh URLs", async () => {
+  const { githubRepo } = await import("../src/git.mjs");
+  assert.equal(githubRepo("https://github.com/stove-box/tsps"), "stove-box/tsps");
+  assert.equal(githubRepo("https://github.com/stove-box/tsps.git\n"), "stove-box/tsps");
+  assert.equal(githubRepo("git@github.com:RSPSApp/tsps.git"), "RSPSApp/tsps");
+  assert.equal(githubRepo("https://gitlab.com/a/b"), null);
+});

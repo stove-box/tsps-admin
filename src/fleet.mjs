@@ -4,7 +4,7 @@ import { createWriteStream, existsSync, mkdirSync, readFileSync, renameSync, wri
 import http from "node:http";
 import { basename, dirname, join, resolve } from "node:path";
 import { childEnv, portsFor, worktreeEnv, worldAdminToken } from "./env.mjs";
-import { gitInfo, listWorktrees, samePath, stream, validBranchName } from "./git.mjs";
+import { forkBehind, forkOf, gitInfo, listWorktrees, samePath, stream, validBranchName } from "./git.mjs";
 import { applyChanges, availableTypes, changesFor, currentType, merge, readLayers, validate, writeLocal } from "./worldtype.mjs";
 
 const LOG_LINES = 3000;
@@ -191,6 +191,23 @@ export class Fleet extends EventEmitter {
   async refreshGit(rec) {
     rec.gitAt = Date.now();
     rec.git = await gitInfo(rec.dir).catch(() => null);
+    // A branch that follows the fork's default branch is also compared with the fork's parent
+    // (RSPSApp/tsps), which only reaches the fork when it's synced on GitHub. Checked every 10 min.
+    const fork = await this.fork();
+    const synced = fork && rec.git?.branch === fork.branch && rec.git?.upstream === `origin/${fork.branch}`;
+    if (!synced) rec.forkBehind = null;
+    else if (!rec.forkAt || Date.now() - rec.forkAt > 10 * 60_000) {
+      rec.forkAt = Date.now();
+      rec.forkBehind = await forkBehind(fork, fork.branch).catch(() => null);
+    }
+  }
+
+  /** The checkout's GitHub fork and its parent, looked up once (null when it isn't one or gh can't tell). */
+  fork() {
+    this.forkInfo ??= forkOf(this.repo)
+      .then((f) => { this.forkParent = f?.parent ?? null; this.forkRepo = f?.repo ?? null; return f; })
+      .catch(() => null);
+    return this.forkInfo;
   }
 
   async probe(rec) {
@@ -589,7 +606,7 @@ export class Fleet extends EventEmitter {
   fetchAll() {
     return this.task({ kind: "fetch", title: "Check for updates" }, async (onLine, job) => {
       const code = await stream("git", ["-C", this.repo, "fetch", "--all", "--prune", "--progress"], { onLine });
-      for (const r of this.servers.values()) r.gitAt = 0;
+      for (const r of this.servers.values()) { r.gitAt = 0; r.forkAt = 0; }
       // Ref lines look like " * [new branch]  x -> origin/x" or "   1a2b..3c4d  main -> origin/main".
       const changed = job.lines.filter((l) => /^\s+(\*|[+-]|[0-9a-f]+\.\.)\S*.*->/.test(l)).length;
       job.summary = changed ? `${changed} branch${changed === 1 ? "" : "es"} updated` : "Nothing new";
@@ -602,6 +619,16 @@ export class Fleet extends EventEmitter {
     if (!rec.git?.upstream) throw Object.assign(new Error("This branch has no upstream to pull from."), { status: 409 });
     const n = worldNumber(rec);
     return this.task({ kind: "update", title: `Update World ${n}`, detail: rec.branch }, async (onLine, job) => {
+      // Following the fork's default branch: bring the fork up to its parent on GitHub first, as
+      // GitHub's "Sync fork" does. gh refuses (fast-forward only) if the fork's branch has its own commits.
+      const fork = await this.fork();
+      if (fork && rec.git?.branch === fork.branch && rec.git?.upstream === `origin/${fork.branch}`) {
+        onLine(`Syncing ${fork.repo} with ${fork.parent} on GitHub...`);
+        const synced = await stream("gh", ["repo", "sync", fork.repo, "--branch", fork.branch], { onLine });
+        if (synced !== 0) return synced;
+        rec.forkBehind = 0;
+        rec.forkAt = Date.now();
+      }
       const code = await stream("git", ["-C", rec.dir, "pull", "--ff-only"], { onLine });
       rec.gitAt = 0;
       const stat = job.lines.find((l) => /\d+ files? changed/.test(l));
@@ -705,7 +732,7 @@ export class Fleet extends EventEmitter {
       autostart: !!this.settings.autostart[k],
       autorestart: !!this.settings.autorestart[k],
       world: { ...rec.world, number: worldNumber(rec) },
-      git: rec.git,
+      git: rec.git && { ...rec.git, fork: rec.forkBehind == null ? null : { behind: rec.forkBehind, parent: this.forkParent ?? null, repo: this.forkRepo ?? null } },
       links: {
         client: `http://localhost:${rec.ports.client}`,
         worldAdmin: rec.token ? `http://localhost:${rec.ports.worldAdmin}/?token=${encodeURIComponent(rec.token)}` : null,

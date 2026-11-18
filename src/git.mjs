@@ -80,6 +80,39 @@ export async function gitInfo(dir) {
   return info;
 }
 
+/** "owner/name" from a GitHub remote URL (https or ssh), else null. */
+export function githubRepo(url) {
+  const m = /github\.com[/:]([^/\s]+)\/([^/\s]+?)(?:\.git)?\/?$/.exec(String(url).trim());
+  return m ? `${m[1]}/${m[2]}` : null;
+}
+
+/**
+ * When the checkout's origin is a GitHub fork: { repo: "you/tsps", parent: "RSPSApp/tsps", branch:
+ * the fork's default branch }. Needs the GitHub CLI signed in; null otherwise (or when not a fork).
+ */
+export async function forkOf(repoDir) {
+  const url = await run("git", ["-C", repoDir, "remote", "get-url", "origin"]);
+  const repo = url.code === 0 ? githubRepo(url.stdout) : null;
+  if (!repo) return null;
+  const view = await run("gh", ["repo", "view", repo, "--json", "isFork,parent,defaultBranchRef"], { timeout: 20_000 });
+  if (view.code !== 0) return null;
+  try {
+    const j = JSON.parse(view.stdout);
+    if (!j.isFork || !j.parent) return null;
+    return { repo, parent: `${j.parent.owner.login}/${j.parent.name}`, branch: j.defaultBranchRef?.name ?? "main" };
+  } catch {
+    return null;
+  }
+}
+
+/** How many commits the parent's branch has that the fork's doesn't (GitHub's compare API). */
+export async function forkBehind(fork, branch) {
+  const [owner, name] = fork.parent.split("/");
+  const r = await run("gh", ["api", `repos/${fork.repo}/compare/${branch}...${owner}:${name}:${branch}`, "--jq", ".ahead_by"], { timeout: 20_000 });
+  const n = Number(r.stdout.trim());
+  return r.code === 0 && Number.isInteger(n) ? n : null;
+}
+
 export async function validBranchName(name) {
   if (typeof name !== "string" || !name || name.length > 200 || name.startsWith("-")) return false;
   return (await run("git", ["check-ref-format", "--branch", name])).code === 0;

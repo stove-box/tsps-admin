@@ -461,9 +461,16 @@ function renderWorld() {
   const g = s.git;
   const p = s.ports;
   const lastExit = s.lastExit ? new Date(s.lastExit.at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) : null;
+  // Commits waiting: the ones on the branch it tracks, plus (when that's a fork's main) the ones its
+  // parent has that the fork hasn't picked up yet.
+  const forkBehind = g?.fork?.behind ?? 0;
+  const waiting = (g?.behind ?? 0) + forkBehind;
   const sync = !g?.upstream ? "No upstream"
-    : g.behind ? `<span class="bad">${g.behind} behind</span>${g.ahead ? `, ${g.ahead} ahead` : ""}`
+    : waiting ? `<span class="bad">${waiting} behind</span>${g.ahead ? `, ${g.ahead} ahead` : ""}`
     : g.ahead ? `${g.ahead} ahead` : `<span class="good">Up to date</span>`;
+  const pullTip = g?.fork?.repo
+    ? `Syncs your fork ${g.fork.repo} with ${g.fork.parent} on GitHub (like its Sync fork button), then pulls`
+    : "git pull --ff-only";
 
   setHtml(el, `
     <div class="hero osrs">
@@ -504,12 +511,12 @@ function renderWorld() {
         ${g ? `
         <dl class="kv">
           <dt>Branch</dt><dd class="y">${esc(g.branch ?? "?")}</dd>
-          <dt>Tracking</dt><dd>${esc(g.upstream ?? "none")}</dd>
+          <dt>Tracking</dt><dd>${esc(g.fork?.parent ? `${g.fork.parent} (via ${g.upstream})` : g.upstream ?? "none")}</dd>
           <dt>Status</dt><dd>${sync}</dd>
           <dt>Changes</dt><dd>${g.dirty ? `<span class="bad">${g.dirty} uncommitted</span>` : `<span class="good">None</span>`}</dd>
         </dl>
         ${g.last ? `<div class="commit osrs-inset"><code>${esc(g.last.hash)}</code> ${esc(g.last.subject)} <span class="when">- ${esc(g.last.when)}</span></div>` : ""}
-        ${g.upstream ? `<div class="links"><button type="button" class="stone" ${b("pull")} data-act="pull" title="git pull --ff-only">${ICON.update}${g.behind ? `Update (${g.behind} new)` : "Update"}</button></div>` : ""}`
+        ${g.upstream ? `<div class="links"><button type="button" class="stone" ${b("pull")} data-act="pull" title="${esc(pullTip)}">${ICON.update}${waiting ? `Update (${waiting} new)` : "Update"}</button></div>` : ""}`
         : `<p class="rs" style="margin:0;color:#e8dcc0">Loading...</p>`}
       </section>
       <section class="panel osrs">
