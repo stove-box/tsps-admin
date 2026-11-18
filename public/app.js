@@ -529,12 +529,89 @@ $("#world").addEventListener("change", (e) => {
   if (flag && selected) post(`/api/servers/${selected}/flags`, { [flag]: e.target.checked }).catch((err) => toast(err.message));
 });
 $("#fetch").onclick = () => post("/api/git/fetch").catch((err) => toast(err.message));
-$("#new").onclick = () => { $("#new-form").reset(); $("#new-dialog").showModal(); };
-$("#new-dialog").addEventListener("close", () => {
-  if ($("#new-dialog").returnValue !== "ok") return;
-  const f = new FormData($("#new-form"));
-  post("/api/worktrees", { branch: f.get("branch"), base: f.get("base") }).catch((err) => toast(err.message));
+// ---- New world ----
+
+/** A typed name as a branch git accepts: spaces become dashes, characters git refuses are dropped. */
+function branchFromName(name) {
+  return name.trim()
+    .replace(/\s+/g, "-")
+    .replace(/[~^:?*[\]\\@{}<>|"'`!$&;,#%]/g, "")
+    .replace(/\.{2,}/g, ".")
+    .replace(/\/{2,}/g, "/")
+    .replace(/-{2,}/g, "-")
+    .split("/").map((part) => part.replace(/^[.-]+/, "").replace(/(\.lock)+$|\.+$/g, "")).filter(Boolean).join("/");
+}
+
+/** What `scripts/wt new` will make: the next free slot (as a world number) and the folder beside the main checkout. */
+function newWorldPlan(branch) {
+  const used = new Set(state.servers.map((s) => s.ports.slot).filter(Boolean));
+  let slot = 1;
+  while (used.has(slot) && slot < 99) slot++;
+  const main = (state.repo ?? "tsps").split(/[\\/]/).pop();
+  return { number: 300 + slot, folder: `${main}-${branch.replace(/\//g, "-")}` };
+}
+
+let pendingWorld = null; // { folder, number, task } until the new world shows up in the list
+
+function updateNewWorld() {
+  const name = $("#new-name").value;
+  const branch = branchFromName(name);
+  const taken = state.servers.find((s) => s.branch === branch);
+  const error = !name.trim() ? "" : !branch ? "Use letters, numbers and dashes." : taken ? `World ${taken.world.number} already uses this name.` : "";
+  const plan = newWorldPlan(branch);
+  $("#new-preview").innerHTML = branch && !error ? `
+    <img class="star sprite members" src="members-world.png" width="16" height="16" alt="">
+    <div><div class="new-number">World ${plan.number}</div>
+    <div class="new-detail">Branch <code>${esc(branch)}</code> in <code>${esc(plan.folder)}</code></div></div>` : "";
+  $("#new-error").textContent = error;
+  $("#new-error").hidden = !error;
+  $("#new-create").disabled = !branch || !!error;
+  return { branch, error, plan };
+}
+
+$("#new").onclick = () => {
+  $("#new-form").reset();
+  $("#new-form").querySelector(".advanced").open = false;
+  updateNewWorld();
+  $("#new-dialog").showModal();
+  $("#new-name").focus();
+};
+$("#new-name").addEventListener("input", updateNewWorld);
+$("#new-cancel").onclick = () => $("#new-dialog").close("cancel");
+$("#new-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const { branch, error, plan } = updateNewWorld();
+  if (!branch || error) return;
+  const base = $("#new-base").value.trim();
+  $("#new-create").disabled = true;
+  try {
+    const r = await post("/api/worktrees", { branch, base });
+    $("#new-dialog").close("ok");
+    pendingWorld = { ...plan, task: r.task };
+    toast(`Creating World ${plan.number}. It opens here when it's ready, in a few minutes.`, "info");
+  } catch (err) {
+    $("#new-error").textContent = err.message;
+    $("#new-error").hidden = false;
+    $("#new-create").disabled = false;
+  }
 });
+
+/** Opens the new world once it appears, or reports why it wasn't created. */
+function watchNewWorld() {
+  if (!pendingWorld) return;
+  const made = state.servers.find((s) => s.dir.split(/[\\/]/).pop().toLowerCase() === pendingWorld.folder.toLowerCase());
+  if (made) {
+    toast(`World ${made.world.number} is ready. Launch it when you like.`, "info");
+    pendingWorld = null;
+    select(made.id);
+    return;
+  }
+  const task = state.tasks.find((t) => t.id === pendingWorld.task);
+  if (task?.state === "failed") {
+    toast(`World ${pendingWorld.number} wasn't created: ${task.lines.filter(Boolean).at(-1) ?? "see Recent jobs"}`);
+    pendingWorld = null;
+  }
+}
 window.addEventListener("hashchange", () => select(location.hash.slice(1)));
 
 function connect() {
@@ -546,12 +623,14 @@ function connect() {
     state = JSON.parse(e.data);
     if (!selected || !current()) select(location.hash.slice(1) || store.get("tsps-admin:selected"));
     else { renderSwitcher(); renderWorld(); }
+    watchNewWorld();
   });
   es.addEventListener("task", (e) => {
     const t = JSON.parse(e.data);
     const i = state.tasks.findIndex((x) => x.id === t.id);
     if (i >= 0) state.tasks[i] = t; else state.tasks.unshift(t);
     renderSwitcher();
+    watchNewWorld();
   });
   es.addEventListener("log", (e) => {
     const { id, t, line } = JSON.parse(e.data);

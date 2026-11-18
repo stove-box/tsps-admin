@@ -68,15 +68,24 @@
   </main>
 </div>
 
-<dialog id="new-dialog" class="osrs-dialog">
-  <form method="dialog" id="new-form">
-    <h2 class="rs-title">Create a new world</h2>
-    <p>Each world is its own git worktree with its own ports, saves and console. This runs <code>scripts/wt new</code>, which copies <code>node_modules</code>, so it can take a few minutes. Progress shows under Recent jobs.</p>
-    <label>Activity (branch name)<input type="text" name="branch" required placeholder="fix/my-change" autocomplete="off" spellcheck="false"></label>
-    <label>Based on<input type="text" name="base" placeholder="origin/main" autocomplete="off" spellcheck="false"></label>
+<dialog id="new-dialog" class="osrs-dialog" aria-labelledby="new-title">
+  <form method="dialog" id="new-form" novalidate>
+    <h2 class="rs-title" id="new-title">New world</h2>
+    <label for="new-name">Name</label>
+    <input type="text" id="new-name" name="branch" placeholder="e.g. my-new-feature" autocomplete="off" spellcheck="false"
+      aria-describedby="new-preview new-error">
+    <div id="new-preview" class="new-preview" aria-live="polite"></div>
+    <p id="new-error" class="field-error" role="alert" hidden></p>
+    <details class="advanced">
+      <summary>Advanced</summary>
+      <label for="new-base">Start from</label>
+      <input type="text" id="new-base" name="base" placeholder="origin/main" autocomplete="off" spellcheck="false">
+      <p class="hint">The branch or commit the new world starts from. Leave it empty for the latest main. If a branch with this name already exists, the world uses it instead.</p>
+    </details>
+    <p class="hint">Takes a few minutes while it copies the game's files. You can keep using the panel; it opens the new world when it's ready.</p>
     <div class="dialog-actions">
-      <button value="cancel" class="stone" formnovalidate>Cancel</button>
-      <button value="ok" class="stone gold">Create world</button>
+      <button type="button" class="stone" id="new-cancel">Cancel</button>
+      <button type="submit" value="ok" class="stone gold" id="new-create" disabled>Create world</button>
     </div>
   </form>
 </dialog>

@@ -46,7 +46,10 @@ FreeToPlay plugin is off, as in the server), and from the live world once it's o
   `powershell -File scripts/install-startup.ps1` (`-Remove` undoes it).
 - **Game update**: branch, upstream, ahead/behind, uncommitted files and last commit. **Check for
   updates** runs `git fetch --all --prune`; **Update** runs `git pull --ff-only`.
-- **New world** runs `scripts/wt new <branch> [base]` through Git Bash.
+- **New world** asks only for a name (made into a branch name as you type: spaces become dashes,
+  characters git refuses are dropped), previews the world number, branch and folder it will get, and
+  keeps the starting point under Advanced (default `origin/main`). It runs `scripts/wt new <branch>
+  [base]` through Git Bash and opens the new world when it appears.
 - **Remove world** (Danger zone, shut-down worlds only) runs `scripts/wt rm`. If the worktree has
   uncommitted changes, the dialog lists them and removes it with `git worktree remove --force` only
   after you tick "Discard these changes". The branch is always kept.
