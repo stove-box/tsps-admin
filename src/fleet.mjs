@@ -120,6 +120,15 @@ export function worldInfo(dir) {
   };
 }
 
+/** The line that says why a job failed: its last error, without git's "fatal:"/"error:" prefix. */
+export function failureLine(lines) {
+  const text = lines.map((l) => l.trim()).filter(Boolean);
+  const line = [...text].reverse().find((l) => /^(fatal|error|wt):|\b(error|failed|refus\w*|cannot|could not|not found)\b/i.test(l))
+    ?? text.at(-1) ?? "Failed";
+  const clean = line.replace(/^(fatal|error|wt):\s*/i, "");
+  return clean.length > 160 ? clean.slice(0, 157) + "..." : clean;
+}
+
 const slug = (dir) => basename(dir).toLowerCase().replace(/[^a-z0-9-]+/g, "-");
 
 export class Fleet extends EventEmitter {
@@ -451,8 +460,17 @@ export class Fleet extends EventEmitter {
 
   // ---- git and worktrees ----
 
-  task(title, fn) {
-    const task = { id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6), title, state: "running", lines: [], at: Date.now() };
+  /**
+   * A background job the page lists under Recent jobs. `meta`: { kind, title, detail } in plain words
+   * ("Update World 300", "main"). `fn(onLine, job)` returns the exit code and may set `job.summary`,
+   * the one line shown when it finishes; otherwise a failure shows its last error line.
+   */
+  task(meta, fn) {
+    const task = {
+      id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+      kind: meta.kind, title: meta.title, detail: meta.detail ?? null,
+      state: "running", summary: null, lines: [], at: Date.now(), endedAt: null,
+    };
     this.tasks.unshift(task);
     this.tasks.splice(20);
     const onLine = (l) => {
@@ -462,26 +480,48 @@ export class Fleet extends EventEmitter {
       this.emit("task", task);
     };
     this.emit("task", task);
-    Promise.resolve(fn(onLine))
+    Promise.resolve(fn(onLine, task))
       .then((code) => { task.state = code === 0 ? "done" : "failed"; })
       .catch((err) => { onLine(err.message); task.state = "failed"; })
       .finally(async () => {
+        task.endedAt = Date.now();
+        if (task.state === "failed") task.summary = failureLine(task.lines);
+        else task.summary ??= "Done";
         this.emit("task", task);
         await this.refresh().catch(() => {});
       });
     return task;
   }
 
+  /** Drops finished jobs from Recent jobs; running ones stay. */
+  clearTasks() {
+    this.tasks = this.tasks.filter((t) => t.state === "running");
+    this.emit("state");
+  }
+
   fetchAll() {
-    return this.task("git fetch --all --prune", (onLine) => stream("git", ["-C", this.repo, "fetch", "--all", "--prune", "--progress"], { onLine })
-      .then((code) => { for (const r of this.servers.values()) r.gitAt = 0; return code; }));
+    return this.task({ kind: "fetch", title: "Check for updates" }, async (onLine, job) => {
+      const code = await stream("git", ["-C", this.repo, "fetch", "--all", "--prune", "--progress"], { onLine });
+      for (const r of this.servers.values()) r.gitAt = 0;
+      // Ref lines look like " * [new branch]  x -> origin/x" or "   1a2b..3c4d  main -> origin/main".
+      const changed = job.lines.filter((l) => /^\s+(\*|[+-]|[0-9a-f]+\.\.)\S*.*->/.test(l)).length;
+      job.summary = changed ? `${changed} branch${changed === 1 ? "" : "es"} updated` : "Nothing new";
+      return code;
+    });
   }
 
   pull(id) {
     const rec = this.get(id);
     if (!rec.git?.upstream) throw Object.assign(new Error("This branch has no upstream to pull from."), { status: 409 });
-    return this.task(`git pull --ff-only (${rec.branch ?? rec.id})`, (onLine) => stream("git", ["-C", rec.dir, "pull", "--ff-only"], { onLine })
-      .then((code) => { rec.gitAt = 0; return code; }));
+    const n = 300 + (rec.ports.slot ?? 0);
+    return this.task({ kind: "update", title: `Update World ${n}`, detail: rec.branch }, async (onLine, job) => {
+      const code = await stream("git", ["-C", rec.dir, "pull", "--ff-only"], { onLine });
+      rec.gitAt = 0;
+      const stat = job.lines.find((l) => /\d+ files? changed/.test(l));
+      job.summary = job.lines.some((l) => /Already up to date/i.test(l)) ? "Already up to date"
+        : stat ? stat.trim().replace(/,.*$/, "") : "Updated";
+      return code;
+    });
   }
 
   /**
@@ -495,18 +535,25 @@ export class Fleet extends EventEmitter {
     const args = [join(this.repo, "scripts", "wt"), "new", branch, ...(base ? [base] : [])];
     // Where `wt new` puts it: beside the main checkout, named after it and the branch.
     const dir = join(dirname(this.repo), `${basename(this.repo)}-${branch.replace(/\//g, "-")}`);
-    return this.task(`New world: ${branch}`, async (onLine) => {
+    return this.task({ kind: "create", title: "Create world", detail: branch }, async (onLine, job) => {
       const code = await stream(this.bash, args, { cwd: this.repo, env: childEnv(process.env, this.repo), onLine });
-      if (code !== 0 || type === "members") return code;
+      if (code !== 0) return code;
       await this.refresh();
       const rec = [...this.servers.values()].find((r) => samePath(r.dir, dir));
+      const n = rec ? 300 + (rec.ports.slot ?? 0) : null;
+      const world = n ? `World ${n}` : "The world";
+      if (n) job.title = `Create World ${n}`;
+      job.summary = `${world} is ready`;
+      if (type === "members") return 0;
       try {
         if (!rec) throw new Error(`couldn't find the new world at ${dir}`);
         const r = await this.setWorldType(rec.id, type);
         onLine(r.message ?? "World type set.");
+        job.summary = `${world} is ready as ${rec.world?.typeLabel ?? type}`;
       } catch (err) {
         // The world exists; only its type didn't take. Say so and leave it Members.
         onLine(`World type not set (${err.message}); the world is Members. Change it from its World type menu.`);
+        job.summary = `${world} is ready, but as Members (${err.message})`;
       }
       return 0;
     });
@@ -522,19 +569,26 @@ export class Fleet extends EventEmitter {
     if (rec.proc || rec.probe?.gameUp || rec.probe?.panelUp) throw Object.assign(new Error("Shut the world down first."), { status: 409 });
     await this.refreshGit(rec);
     const dir = rec.dir.replace(/\\/g, "/");
-    const name = rec.branch ?? basename(rec.dir);
+    const meta = { kind: "remove", title: `Remove World ${300 + (rec.ports.slot ?? 0)}`, detail: rec.branch ?? basename(rec.dir) };
+    const kept = `Removed; branch ${meta.detail} kept`;
     if (!rec.git?.dirty) {
-      return this.task(`Remove ${name}`, (onLine) => stream(this.bash, [join(this.repo, "scripts", "wt"), "rm", dir], { cwd: this.repo, onLine }));
+      return this.task(meta, async (onLine, job) => {
+        const code = await stream(this.bash, [join(this.repo, "scripts", "wt"), "rm", dir], { cwd: this.repo, onLine });
+        job.summary = kept;
+        return code;
+      });
     }
     if (!discard) {
       throw Object.assign(new Error(`${rec.git.dirty} uncommitted change(s) would be lost.`), { status: 409, changes: rec.git.changes });
     }
     const n = rec.git.dirty;
-    return this.task(`Remove ${name} (discarding ${n} change${n === 1 ? "" : "s"})`, async (onLine) => {
+    return this.task(meta, async (onLine, job) => {
       for (const c of rec.git.changes) onLine(`discard ${c}`);
       // The other half of `wt rm`: drop the agent MCP entry if it pointed at this worktree.
       await stream("claude", ["mcp", "remove", "tsps", "-s", "local"], { cwd: rec.dir, onLine: () => {} });
-      return stream("git", ["-C", this.repo, "worktree", "remove", "--force", dir], { onLine });
+      const code = await stream("git", ["-C", this.repo, "worktree", "remove", "--force", dir], { onLine });
+      job.summary = `${kept}; ${n} uncommitted change${n === 1 ? "" : "s"} discarded`;
+      return code;
     });
   }
 

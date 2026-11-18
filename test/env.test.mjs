@@ -94,3 +94,14 @@ test("world types offered follow the worktree's own data", async () => {
   writeFileSync(join(data, "leagues.json"), JSON.stringify({ leagues: { 1: { name: "Leagues I - Twisted" }, 5: { name: "Leagues V - Raging Echoes" } } }));
   assert.deepEqual(wt.availableTypes(dir).map((t) => t.id), ["members", "f2p", "hardcore", "league:1", "league:5"]);
 });
+
+test("a failed job says why in one line", async () => {
+  const { failureLine } = await import("../src/fleet.mjs");
+  assert.equal(failureLine(["Preparing worktree", "fatal: 'x' is already checked out at 'I:/GitHub/tsps-x'", ""]),
+    "'x' is already checked out at 'I:/GitHub/tsps-x'");
+  assert.equal(failureLine(["Updating 1a2b..3c4d", "error: Your local changes to the following files would be overwritten by merge:", "  a.json", "Aborting"]),
+    "Your local changes to the following files would be overwritten by merge:");
+  assert.equal(failureLine(["something odd happened"]), "something odd happened");
+  assert.equal(failureLine([]), "Failed");
+  assert.equal(failureLine(["error: " + "x".repeat(300)]).length, 160);
+});

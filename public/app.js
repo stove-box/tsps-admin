@@ -124,16 +124,68 @@ function renderSwitcher() {
   const players = online.reduce((n, s) => n + (s.players ?? 0), 0);
   setHtml($("#total"), `<b>${players}</b> players on <b>${online.length}</b> of ${state.servers.length} worlds`);
 
-  const jobs = state.tasks ?? [];
-  $("#jobs-wrap").hidden = jobs.length === 0;
-  const open = new Set([...document.querySelectorAll(".job[open]")].map((d) => d.dataset.id));
-  setHtml($("#jobs"), jobs.slice(0, 8).map((t) => `
-    <details class="job" data-id="${esc(t.id)}" ${open.has(t.id) || t.state === "running" ? "open" : ""}>
-      <summary><span class="pip j-${esc(t.state)}" aria-label="${esc(t.state)}"></span><span class="t">${esc(t.title)}</span></summary>
-      <pre>${esc(t.lines.join("\n")) || "..."}</pre>
-    </details>`).join(""));
-  for (const pre of document.querySelectorAll(".job[open] pre")) pre.scrollTop = pre.scrollHeight;
+  renderJobs();
 }
+
+// ---- Recent jobs ----
+
+const JOB_ICON = {
+  create: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9" /><path d="M12 8v8M8 12h8" /></svg>',
+  update: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11m0 0-4-4m4 4 4-4M5 19h14" /></svg>',
+  fetch: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.3-5.7M20 4v5h-5" /></svg>',
+  remove: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 12a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1l1-12M9 7V4h6v3" /></svg>',
+};
+const openJobs = new Set(); // jobs whose Details are expanded, kept across redraws
+
+function ago(t) {
+  const s = Math.max(0, Math.round((Date.now() - t) / 1000));
+  if (s < 45) return "just now";
+  if (s < 3600) return `${Math.round(s / 60)} min ago`;
+  if (s < 86400) return `${Math.round(s / 3600)} h ago`;
+  return new Date(t).toLocaleDateString();
+}
+const clock = (ms) => { const s = Math.floor(ms / 1000); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`; };
+
+/** The newest line of a running job worth showing, e.g. "Updating files: 45% (4248/9439)". */
+function liveLine(lines) {
+  const line = [...lines].reverse().find((l) => l.trim());
+  return line ? line.trim().replace(/^(remote|fatal|error):\s*/i, "") : "Starting...";
+}
+
+function jobStatus(t) {
+  if (t.state === "running") {
+    return `<span class="job-state running">Working ${clock(Date.now() - t.at)}</span><span class="job-msg">${esc(liveLine(t.lines))}</span>`;
+  }
+  const took = t.endedAt && t.endedAt - t.at >= 2000 ? ` in ${clock(t.endedAt - t.at)}` : "";
+  return t.state === "done"
+    ? `<span class="job-state done">${esc(t.summary ?? "Done")}</span><span class="job-when">${ago(t.endedAt ?? t.at)}${took}</span>`
+    : `<span class="job-state failed">Failed</span><span class="job-msg">${esc(t.summary ?? "See details")}</span><span class="job-when">${ago(t.endedAt ?? t.at)}</span>`;
+}
+
+function renderJobs() {
+  const jobs = (state.tasks ?? []).slice(0, 6);
+  $("#jobs-wrap").hidden = jobs.length === 0;
+  $("#jobs-clear").hidden = !jobs.some((t) => t.state !== "running");
+  setHtml($("#jobs"), jobs.map((t) => `
+    <article class="job j-${esc(t.state)} k-${esc(t.kind ?? "job")}" data-id="${esc(t.id)}">
+      <span class="job-icon">${JOB_ICON[t.kind] ?? JOB_ICON.fetch}</span>
+      <div class="job-body">
+        <div class="job-title">${esc(t.title ?? "Job")}${t.detail ? ` <span class="job-detail">${esc(t.detail)}</span>` : ""}</div>
+        <div class="job-status">${jobStatus(t)}</div>
+        ${t.lines.length ? `<details class="job-log" data-id="${esc(t.id)}" ${openJobs.has(t.id) ? "open" : ""}>
+          <summary>Details</summary><pre>${esc(t.lines.filter((l, i, a) => l || a[i - 1]).join("\n"))}</pre></details>` : ""}
+      </div>
+    </article>`).join(""));
+  for (const pre of document.querySelectorAll(".job-log[open] pre")) pre.scrollTop = pre.scrollHeight;
+}
+
+$("#jobs").addEventListener("toggle", (e) => {
+  const d = e.target.closest?.(".job-log");
+  if (!d) return;
+  if (d.open) { openJobs.add(d.dataset.id); d.querySelector("pre").scrollTop = 1e9; } else openJobs.delete(d.dataset.id);
+}, true);
+$("#jobs-clear").onclick = () => post("/api/tasks/clear").catch((err) => toast(err.message));
+setInterval(() => { if (state.tasks?.length) renderJobs(); }, 1000);
 
 // ---- selected world ----
 

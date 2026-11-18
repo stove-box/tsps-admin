@@ -41,10 +41,13 @@
       <nav id="world-list" class="world-list"></nav>
       <div class="switcher-foot rs" id="total"></div>    </div>
 
-    <div id="jobs-wrap" class="jobs-wrap" hidden>
-      <h2 class="side-label">Recent jobs</h2>
+    <section id="jobs-wrap" class="jobs-panel osrs" aria-labelledby="jobs-title" hidden>
+      <div class="jobs-head">
+        <h2 class="rs-title" id="jobs-title">Recent jobs</h2>
+        <button type="button" id="jobs-clear" class="text-button" title="Remove finished jobs from this list">Clear</button>
+      </div>
       <div id="jobs" class="jobs"></div>
-    </div>
+    </section>
   </aside>
   <button type="button" id="menu-backdrop" class="menu-backdrop" aria-label="Close world list" tabindex="-1" hidden></button>
 
