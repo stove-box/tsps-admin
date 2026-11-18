@@ -81,10 +81,15 @@ async function post(path, body = {}) {
  * confirm(). Focus starts on No, so a stray Enter doesn't do the thing; Escape also says no.
  * Resolves to true only for Yes.
  */
-function askConfirm({ title, text, yes = "Yes", no = "No", danger = false, list = null, check = null }) {
+function askConfirm({ title, text, yes = "Yes", no = "No", danger = false, list = null, check = null, card = "", note = "" }) {
   const d = $("#confirm-dialog");
   $("#confirm-title").textContent = title;
   $("#confirm-text").textContent = text;
+  // Optional preview card (markup built by the caller from escaped values) and a closing note.
+  $("#confirm-card").innerHTML = card;
+  $("#confirm-card").hidden = !card;
+  $("#confirm-note").textContent = note;
+  $("#confirm-note").hidden = !note;
   $("#confirm-yes").textContent = yes;
   $("#confirm-yes").className = `stone ${danger ? "red" : "gold"}`;
   $("#confirm-no").textContent = no;
@@ -513,13 +518,22 @@ async function changeWorldType(type) {
   const label = s.world.types.find((t) => t.id === type)?.label ?? type;
   const n = s.world.number;
   const online = s.status === "online";
+  // Laid out like New world: title, one line, a card showing the change with its world icons, a note.
+  const to = { type, typeLabel: label, members: type !== "f2p" };
   const ok = await askConfirm({
-    title: `Change World ${n} to ${label}?`,
-    text: !online ? "It takes effect the next time you launch the world."
+    title: "Change the world type?",
+    text: `World ${n} becomes ${label}.`,
+    card: `
+      <div class="type-change">
+        <span class="from">${worldIcon(s.world)}<span>${esc(typeName(s.world))}</span></span>
+        <span class="arrow" aria-label="to">&rarr;</span>
+        <span class="to">${worldIcon(to)}<span>${esc(label)}</span></span>
+      </div>`,
+    note: !online ? "It takes effect the next time you launch the world."
       : s.players ? `The server restarts to apply it. The ${s.players} player${s.players === 1 ? "" : "s"} online get a 60-second update countdown first and are saved.`
       : "The server restarts to apply it.",
-    yes: "Yes, change it",
-    no: "No",
+    yes: "Change type",
+    no: "Cancel",
   });
   if (!ok) return;
   busy.add(`${s.id}:world-type`);

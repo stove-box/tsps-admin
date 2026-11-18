@@ -423,3 +423,12 @@ button.stone.icon svg { width: 18px; height: 18px; }
 .new-dialog .new-intro { margin-bottom: 2px; }
 .new-dialog .new-note { color: #c9b9a0; }
 .new-dialog .confirm-actions { margin-top: 2px; }
+
+/* World type change: New world's preview card, showing from -> to with the world icons */
+.confirm-card { justify-content: center; text-align: left; }
+.type-change { display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: 6px 12px; }
+.type-change .from, .type-change .to { display: inline-flex; align-items: center; gap: 8px; font: 16px/1.2 var(--rs); text-shadow: 1px 1px 0 #000; }
+.type-change .from { color: #c9b9a0; }
+.type-change .to { font-family: var(--rs-bold); color: var(--rs-yellow); }
+.type-change .arrow { font: 16px/1 var(--rs-bold); color: var(--rs-orange); text-shadow: 1px 1px 0 #000; }
+.confirm-note { font: 16px/1.35 var(--rs) !important; color: #c9b9a0 !important; text-shadow: 1px 1px 0 #000; }
