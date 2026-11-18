@@ -975,6 +975,10 @@ function connect() {
   es.onerror = () => { conn.className = "conn down"; conn.textContent = "Reconnecting"; };
   es.addEventListener("state", (e) => {
     state = JSON.parse(e.data);
+    // A worktree without a port slot is a world still being created (wt new writes the slot last).
+    // The server leaves those out; this also covers a panel process from before it did, which would
+    // list one as a second World 1 on the main checkout's ports.
+    state.servers = state.servers.filter((s) => s.main || s.ports?.slot != null);
     if (!selected || !current()) select(location.hash.slice(1) || store.get("tsps-admin:selected"));
     else { renderSwitcher(); renderWorld(); }
     watchNewWorld();
