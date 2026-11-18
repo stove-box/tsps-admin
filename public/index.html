@@ -101,25 +101,14 @@
   <form method="dialog">
     <h2 class="rs-title" id="confirm-title"></h2>
     <p id="confirm-text"></p>
+    <div id="confirm-more" class="confirm-more" hidden>
+      <p class="warn-text" id="confirm-list-title"></p>
+      <ul id="confirm-list" class="file-list"></ul>
+      <label class="osrs-check"><input type="checkbox" id="confirm-check"><span class="box" aria-hidden="true"></span><span id="confirm-check-label"></span></label>
+    </div>
     <div class="confirm-actions">
       <button value="yes" id="confirm-yes" class="stone red"></button>
       <button value="no" id="confirm-no" class="stone"></button>
-    </div>
-  </form>
-</dialog>
-
-<dialog id="remove-dialog" class="osrs-dialog danger">
-  <form method="dialog" id="remove-form">
-    <h2 class="rs-title" id="remove-title">Remove world</h2>
-    <p id="remove-text"></p>
-    <div id="remove-changes" hidden>
-      <p class="warn-text">These uncommitted changes will be lost:</p>
-      <ul id="remove-list" class="file-list"></ul>
-      <label class="osrs-check"><input type="checkbox" id="remove-discard"><span class="box" aria-hidden="true"></span><span>Discard these changes and remove the world</span></label>
-    </div>
-    <div class="dialog-actions">
-      <button value="cancel" class="stone" formnovalidate>Keep world</button>
-      <button value="ok" id="remove-confirm" class="stone red">Remove world</button>
     </div>
   </form>
 </dialog>

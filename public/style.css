@@ -411,3 +411,6 @@ button.stone.icon svg { width: 18px; height: 18px; }
 .confirm-dialog p { font: 16px/1.35 var(--rs); color: #e8dcc0; text-shadow: 1px 1px 0 #000; }
 .confirm-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 4px; }
 .confirm-actions .stone { width: 100%; }
+.confirm-more { display: grid; gap: 8px; text-align: left; }
+.confirm-more .file-list { margin: 0; }
+.confirm-more .osrs-check { justify-self: center; }

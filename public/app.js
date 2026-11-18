@@ -81,13 +81,24 @@ async function post(path, body = {}) {
  * confirm(). Focus starts on No, so a stray Enter doesn't do the thing; Escape also says no.
  * Resolves to true only for Yes.
  */
-function askConfirm({ title, text, yes = "Yes", no = "No", danger = false }) {
+function askConfirm({ title, text, yes = "Yes", no = "No", danger = false, list = null, check = null }) {
   const d = $("#confirm-dialog");
   $("#confirm-title").textContent = title;
   $("#confirm-text").textContent = text;
   $("#confirm-yes").textContent = yes;
   $("#confirm-yes").className = `stone ${danger ? "red" : "gold"}`;
   $("#confirm-no").textContent = no;
+  // Optional extras (Remove world): a list to show, and a box that must be ticked before Yes works.
+  $("#confirm-more").hidden = !list && !check;
+  $("#confirm-list-title").textContent = list?.title ?? "";
+  $("#confirm-list-title").hidden = !list;
+  $("#confirm-list").hidden = !list;
+  $("#confirm-list").innerHTML = (list?.items ?? []).map((i) => `<li>${esc(i)}</li>`).join("");
+  $("#confirm-check").checked = false;
+  $("#confirm-check").closest("label").hidden = !check;
+  $("#confirm-check-label").textContent = check ?? "";
+  $("#confirm-yes").disabled = !!check;
+  $("#confirm-check").onchange = (e) => { $("#confirm-yes").disabled = !e.target.checked; };
   d.returnValue = "";
   d.showModal();
   $("#confirm-no").focus();
@@ -625,26 +636,24 @@ function tickUptime() {
 
 // ---- remove dialog ----
 
-function openRemove() {
+/** Remove world, asked in the same "Are you sure?" dialog; uncommitted changes must be ticked away first. */
+async function openRemove() {
   const s = current();
   if (!s) return;
+  const id = s.id;
   const changes = s.git?.changes ?? [];
-  $("#remove-title").textContent = `Remove World ${s.world.number}?`;
-  $("#remove-text").textContent = `This deletes ${s.dir}, including its player saves and logs. The branch ${activityOf(s)} is kept, so you can create the world again later.`;
-  $("#remove-changes").hidden = changes.length === 0;
-  $("#remove-list").innerHTML = changes.map((c) => `<li>${esc(c)}</li>`).join("");
-  $("#remove-discard").checked = false;
-  $("#remove-confirm").disabled = changes.length > 0;
-  $("#remove-dialog").dataset.id = s.id;
-  $("#remove-dialog").dataset.discard = changes.length > 0 ? "1" : "";
-  $("#remove-dialog").showModal();
+  const n = changes.length;
+  const ok = await askConfirm({
+    title: `Remove World ${s.world.number}?`,
+    text: `This deletes its folder (${folderOf(s)}), including its player saves and logs. The branch ${activityOf(s)} is kept, so you can create the world again later.`,
+    yes: "Yes, remove",
+    no: "No",
+    danger: true,
+    list: n ? { title: `${n === 1 ? "This uncommitted change" : `These ${n} uncommitted changes`} will be lost:`, items: changes } : null,
+    check: n ? `Discard ${n === 1 ? "it" : "them"} and remove the world` : null,
+  });
+  if (ok) act(id, "remove", { body: { discard: n > 0 } });
 }
-$("#remove-discard").onchange = (e) => { $("#remove-confirm").disabled = !e.target.checked; };
-$("#remove-dialog").addEventListener("close", () => {
-  const d = $("#remove-dialog");
-  if (d.returnValue !== "ok") return;
-  act(d.dataset.id, "remove", { body: { discard: d.dataset.discard === "1" && $("#remove-discard").checked } });
-});
 
 // ---- chatbox console ----
 
