@@ -252,7 +252,7 @@ function renderJobs() {
         <div class="job-title">${esc(t.title ?? "Job")}${t.detail ? ` <span class="job-detail">${esc(t.detail)}</span>` : ""}</div>
         <div class="job-status">${jobStatus(t)}</div>
         ${t.lines.length ? `<details class="job-log" data-id="${esc(t.id)}" ${openJobs.has(t.id) ? "open" : ""}>
-          <summary>Details</summary><pre>${esc(t.lines.filter((l, i, a) => l || a[i - 1]).join("\n"))}</pre></details>` : ""}
+          <summary class="addr-btn">Details</summary><pre>${esc(t.lines.filter((l, i, a) => l || a[i - 1]).join("\n"))}</pre></details>` : ""}
       </div>
     </article>`).join(""));
   for (const pre of document.querySelectorAll(".job-log[open] pre")) pre.scrollTop = pre.scrollHeight;
