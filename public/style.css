@@ -110,7 +110,10 @@ button.stone.icon svg { width: 18px; height: 18px; }
 .menu-toggle svg { width: 18px; height: 18px; }
 
 /* ---- World Switcher ---- */
-.switcher { padding: 18px 14px; background: var(--bar); border-right: 1px solid var(--rule); overflow: auto; display: flex; flex-direction: column; gap: 18px; }
+.switcher { padding: 18px 14px; background: var(--bar); border-right: 1px solid var(--rule); overflow-x: hidden; overflow-y: auto; display: flex; flex-direction: column; gap: 18px; min-width: 0; }
+/* The sidebar and the main column still scroll on short windows, without showing a scrollbar. */
+.switcher, .workspace { scrollbar-width: none; }
+.switcher::-webkit-scrollbar, .workspace::-webkit-scrollbar { display: none; }
 .switcher-panel { padding: 10px 8px 8px; }
 .switcher-panel .rs-title { text-align: center; padding: 2px 0 8px; }
 .switcher-head, .world-row { display: grid; grid-template-columns: 22px 52px 58px minmax(0, 1fr); align-items: center; column-gap: 6px; }
@@ -139,11 +142,12 @@ button.stone.icon svg { width: 18px; height: 18px; }
 .switcher-foot b { color: var(--rs-white); font-weight: normal; }
 
 .side-label { margin: 0 4px 8px; color: var(--muted); font-size: 11px; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; }
-.jobs { display: grid; gap: 6px; }
-.job { border: 1px solid var(--rule); border-radius: 5px; background: #1c1d21; }
-.job summary { display: flex; align-items: center; gap: 8px; padding: 7px 10px; cursor: pointer; list-style: none; font-size: 12px; color: #c4bfb2; }
+.jobs-wrap, .jobs { min-width: 0; }
+.jobs { display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px; }
+.job { min-width: 0; overflow: hidden; border: 1px solid var(--rule); border-radius: 5px; background: #1c1d21; }
+.job summary { display: flex; align-items: center; gap: 8px; min-width: 0; padding: 7px 10px; cursor: pointer; list-style: none; font-size: 12px; color: #c4bfb2; }
 .job summary::-webkit-details-marker { display: none; }
-.job summary .t { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.job summary .t { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .job pre { margin: 0; padding: 8px 10px; max-height: 200px; overflow: auto; border-top: 1px solid var(--rule); font: 11px/1.45 var(--mono); color: #c4bfb2; white-space: pre-wrap; overflow-wrap: anywhere; }
 .pip { width: 8px; height: 8px; border-radius: 50%; flex: none; background: currentColor; }
 .j-running { color: var(--rs-orange); } .j-done { color: #6ce28c; } .j-failed { color: #ff9b94; }
@@ -203,7 +207,8 @@ button.stone.icon svg { width: 18px; height: 18px; }
 .danger-zone p { flex: 1 1 280px; margin: 0; color: #c9b9a0; font-size: 12.5px; }
 
 /* ---- chatbox console ---- */
-.chatbox { flex: 1 0 300px; min-height: 300px; display: flex; flex-direction: column; border: 2px solid var(--stone-edge); border-radius: 3px; box-shadow: inset 0 0 0 1px var(--stone-hi), 0 6px 18px var(--shadow); overflow: hidden; background: var(--stone); }
+/* Takes whatever height is left, so the page fits the window instead of scrolling. */
+.chatbox { flex: 1 1 0; min-height: 220px; display: flex; flex-direction: column; border: 2px solid var(--stone-edge); border-radius: 3px; box-shadow: inset 0 0 0 1px var(--stone-hi), 0 6px 18px var(--shadow); overflow: hidden; background: var(--stone); }
 .chat-body {
   flex: 1; overflow: auto; margin: 4px 4px 0; padding: 6px 10px;
   background: linear-gradient(rgba(255, 255, 255, .08), rgba(0, 0, 0, .06)), var(--parchment);
@@ -211,6 +216,11 @@ button.stone.icon svg { width: 18px; height: 18px; }
   color: var(--ink); text-shadow: none; white-space: pre-wrap; overflow-wrap: anywhere;
 }
 .chat-body .ln { display: block; }
+/* The console keeps its own scrollbar (it's how you read back), drawn as a slim stone bar. */
+.chat-body, .job pre { scrollbar-width: thin; scrollbar-color: #6e6046 transparent; }
+.chat-body::-webkit-scrollbar, .job pre::-webkit-scrollbar { width: 8px; height: 8px; }
+.chat-body::-webkit-scrollbar-thumb, .job pre::-webkit-scrollbar-thumb { background: #6e6046; border-radius: 4px; border: 2px solid transparent; background-clip: padding-box; }
+.chat-body::-webkit-scrollbar-track, .job pre::-webkit-scrollbar-track { background: transparent; }
 .chat-body .who { color: #0000ff; }
 .chat-body .who.client { color: #7f007f; }
 .chat-body .who.admin { color: #00599c; }
