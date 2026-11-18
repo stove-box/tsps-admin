@@ -414,3 +414,12 @@ button.stone.icon svg { width: 18px; height: 18px; }
 .confirm-more { display: grid; gap: 8px; text-align: left; }
 .confirm-more .file-list { margin: 0; }
 .confirm-more .osrs-check { justify-self: center; }
+
+/* New world uses the "Are you sure?" dialog's frame (width, title, buttons); its fields stay left-aligned. */
+.new-dialog { width: min(420px, calc(100vw - 32px)); }
+.new-dialog form { text-align: left; gap: 10px; }
+.new-dialog .rs-title, .new-dialog .new-intro, .new-dialog .new-note { text-align: center; }
+.new-dialog .new-intro, .new-dialog .new-note { font: 16px/1.35 var(--rs); color: #e8dcc0; text-shadow: 1px 1px 0 #000; }
+.new-dialog .new-intro { margin-bottom: 2px; }
+.new-dialog .new-note { color: #c9b9a0; }
+.new-dialog .confirm-actions { margin-top: 2px; }
