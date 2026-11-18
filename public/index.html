@@ -74,7 +74,7 @@
 <dialog id="new-dialog" class="osrs-dialog confirm-dialog new-dialog" aria-labelledby="new-title">
   <form method="dialog" id="new-form" novalidate>
     <h2 class="rs-title" id="new-title">Create a new world?</h2>
-    <p class="new-intro">Pick a name and a world type. It gets its own ports, saves and console.</p>
+    <p class="new-intro">Give it a name and pick its world type.</p>
     <label for="new-name">Name</label>
     <input type="text" id="new-name" name="branch" placeholder="e.g. my-new-feature" autocomplete="off" spellcheck="false"
       aria-describedby="new-preview new-error">
@@ -87,9 +87,9 @@
       <summary>Advanced</summary>
       <label for="new-base">Start from</label>
       <input type="text" id="new-base" name="base" placeholder="origin/main" autocomplete="off" spellcheck="false">
-      <p class="hint">The branch or commit the new world starts from. Leave it empty for the latest main. If a branch with this name already exists, the world uses it instead.</p>
+      <p class="new-note" title="A branch or commit. If a branch with the world's name already exists, the world uses that branch instead.">Leave it empty to start from the latest main.</p>
     </details>
-    <p class="new-note">Takes a few minutes while it copies the game's files. The panel opens the new world when it's ready.</p>
+    <p class="new-note">Takes a few minutes; it opens here when ready.</p>
     <div class="confirm-actions">
       <button type="submit" value="ok" class="stone gold" id="new-create" disabled>Create world</button>
       <button type="button" class="stone" id="new-cancel">Cancel</button>
