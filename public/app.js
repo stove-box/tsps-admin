@@ -216,10 +216,81 @@ function heroActions(s) {
   return `${play}<div class="row">${power}${restart}</div>`;
 }
 
+/**
+ * The banner under the world heading while the world goes down or comes back: the in-game update
+ * countdown ("System update in: 0:47", as the game shows it), a shutdown, restart or launch step by
+ * step with a running clock, or the wait before an automatic restart after a crash.
+ */
+function transitionBanner(s) {
+  const n = s.world.number;
+  const cd = s.countdown;
+  if (cd && cd.endsAt > Date.now()) {
+    const why = cd.reason === "settings"
+      ? `World ${n} restarts to apply its new settings. Players are saved first.`
+      : `An update was started in game. World ${n} restarts when it reaches 0:00; players are saved first.`;
+    return `
+      <div class="transit update" role="status">
+        <div class="tr-main">
+          <div class="tr-title">System update in: <span class="tr-clock" data-until="${cd.endsAt}"></span></div>
+          <div class="tr-sub">${esc(why)}</div>
+        </div>
+        <button type="button" class="stone" ${busy.has(`${s.id}:cancel-update`) ? "disabled" : ""} data-act="cancel-update">Cancel</button>
+        <div class="tr-bar"><span data-bar-until="${cd.endsAt}" data-total="${(cd.total || 60) * 1000}"></span></div>
+      </div>`;
+  }
+  const t = s.transition;
+  if (t) {
+    const players = t.players ? `Save ${t.players} player${t.players === 1 ? "" : "s"}` : "Save players";
+    const steps = {
+      shutdown: [[players, "saving"], ["Close the server", "closing"]],
+      restart: [[players, "saving"], ["Start the server", "starting"], ["Online", "online"]],
+      launch: [["Start the server", "starting"], ["Online", "online"]],
+    }[t.kind] ?? [];
+    const at = Math.max(0, steps.findIndex(([, phase]) => phase === t.phase));
+    const title = { shutdown: "Shutting down", restart: "Restarting", launch: "Launching" }[t.kind] ?? "Working";
+    const sub = t.phase === "saving" && t.deadline
+      ? `If saving takes longer than ${clock(t.deadline - t.startedAt)}, the server is stopped anyway.`
+      : t.phase === "starting" ? "Usually ready in under a minute; the console below shows progress." : "";
+    return `
+      <div class="transit ${esc(t.kind)}" role="status">
+        <div class="tr-main">
+          <div class="tr-title">${title} World ${n} <span class="tr-clock" data-since="${t.startedAt}"></span></div>
+          <ol class="tr-steps">${steps.map(([label], i) =>
+            `<li class="${i < at ? "done" : i === at ? "now" : ""}">${esc(label)}</li>`).join("")}</ol>
+          ${sub ? `<div class="tr-sub">${esc(sub)}</div>` : ""}
+        </div>
+        <div class="tr-bar busy"><span></span></div>
+      </div>`;
+  }
+  if (s.retryAt && s.retryAt > Date.now()) {
+    return `
+      <div class="transit restart" role="status">
+        <div class="tr-main">
+          <div class="tr-title">Restarting after a crash in <span class="tr-clock" data-until="${s.retryAt}"></span></div>
+          <div class="tr-sub">Restart after a crash is on for World ${n}. Shut down stops it from trying again.</div>
+        </div>
+      </div>`;
+  }
+  return "";
+}
+
+/** Moves every banner clock and bar on by a second, without redrawing the world view. */
+function tickTimers() {
+  const now = Date.now();
+  for (const el of document.querySelectorAll("[data-until]")) el.textContent = clock(Math.max(0, Number(el.dataset.until) - now));
+  for (const el of document.querySelectorAll("[data-since]")) el.textContent = clock(now - Number(el.dataset.since));
+  for (const el of document.querySelectorAll("[data-bar-until]")) {
+    const left = Math.max(0, Number(el.dataset.barUntil) - now);
+    el.style.width = `${Math.min(100, (left / Number(el.dataset.total)) * 100)}%`;
+  }
+}
+
 function banners(s) {
-  const out = [];
+  const out = [transitionBanner(s)];
   if (s.external) out.push(`<div class="banner info">This world was launched from a terminal, so its console is there. Shut down still saves players first.</div>`);
-  if (s.note) out.push(`<div class="banner ${/^Crashed|Gave up/.test(s.note) ? "error" : "warn"}">${esc(s.note)}</div>`);
+  // While the crash restart counts down, its banner already says so.
+  const waiting = s.retryAt && s.retryAt > Date.now();
+  if (s.note && !waiting) out.push(`<div class="banner ${/stopped unexpectedly|Gave up/.test(s.note) ? "error" : "warn"}">${esc(s.note)}</div>`);
   return out.join("");
 }
 
@@ -459,6 +530,7 @@ function renderWorld() {
         title="${running(s) ? "Shut the world down first" : "Remove this world"}">${ICON.trash}Remove world</button>
     </div>`}`);
   tickUptime();
+  tickTimers();
   if (menuFor() && menuFor() !== s.id && menuFor() !== "new") closeTypeMenu();
   else positionMenu();
 }
@@ -743,4 +815,4 @@ function connect() {
   });
 }
 connect();
-setInterval(tickUptime, 1000);
+setInterval(() => { tickUptime(); tickTimers(); }, 1000);

@@ -105,6 +105,7 @@ const ACTIONS = {
   "game-stop": (id) => fleet.game(id, "stop"),
   "game-restart": (id) => fleet.game(id, "restart"),
   pull: (id) => fleet.pull(id),
+  "cancel-update": (id) => fleet.cancelUpdate(id),
   remove: (id, body) => fleet.removeWorktree(id, { discard: body.discard === true }),
 };
 

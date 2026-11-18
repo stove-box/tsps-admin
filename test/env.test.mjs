@@ -105,3 +105,33 @@ test("a failed job says why in one line", async () => {
   assert.equal(failureLine([]), "Failed");
   assert.equal(failureLine(["error: " + "x".repeat(300)]).length, 160);
 });
+
+test("transitions: a restart stays on screen until the world is back online, and a crash message clears", async () => {
+  const { Fleet } = await import("../src/fleet.mjs");
+  const fleet = new Fleet({ repo: ".", dataDir: mkdtempSync(join(tmpdir(), "tsps-admin-")), bash: "bash" });
+  const rec = { ports: {}, probe: { serverStatus: "online", players: 3 }, transition: null, crashes: [] };
+
+  fleet.beginTransition(rec, "restart", "saving");
+  assert.equal(rec.transition.players, 3);
+  fleet.trackTransition(rec, "online"); // still online: the restart hasn't begun yet
+  assert.equal(rec.transition?.kind, "restart");
+  rec.probe = { serverStatus: "starting" };
+  fleet.trackTransition(rec, "online");
+  assert.equal(rec.transition.phase, "starting");
+  rec.probe = { serverStatus: "online" };
+  fleet.trackTransition(rec, "starting");
+  assert.equal(rec.transition, null, "back online ends the restart");
+
+  // A restart nobody started here (a countdown reaching 0, ::update in game) is noticed too.
+  rec.probe = { serverStatus: "stopping" };
+  fleet.trackTransition(rec, "online");
+  assert.equal(rec.transition?.kind, "restart");
+
+  // A shutdown hands over to a launch only as part of a restart.
+  rec.transition = null;
+  rec.probe = { serverStatus: "online", players: 2 };
+  fleet.beginTransition(rec, "restart", "saving");
+  fleet.beginTransition(rec, "shutdown", "closing");
+  assert.equal(rec.transition.kind, "restart");
+  assert.equal(rec.transition.players, 2);
+});

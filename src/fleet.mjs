@@ -202,15 +202,31 @@ export class Fleet extends EventEmitter {
       serverStatus: catalog.status === 200 ? catalog.json?.serverStatus ?? null : null,
       players: catalog.status === 200 ? catalog.json?.onlinePlayers ?? null : null,
       members: catalog.status === 200 && typeof catalog.json?.membersWorld === "boolean" ? catalog.json.membersWorld : null,
+      countdown: null,
     };
+    // The in-game update countdown (GameUpdate): from a settings Apply with players on, or ::gameUpdate.
+    const cd = catalog.status === 200 ? catalog.json?.countdown : null;
+    if (cd?.scheduled && cd.remainingSeconds > 0) {
+      const endsAt = Date.now() + cd.remainingSeconds * 1000;
+      const was = rec.lastCountdown;
+      rec.probe.countdown = {
+        // Keep the earlier end time unless it really moved: the poll only has whole seconds.
+        endsAt: was && Math.abs(was.endsAt - endsAt) < 1500 ? was.endsAt : endsAt,
+        total: was?.total ?? Math.max(cd.remainingSeconds, catalog.json?.pending?.seconds ?? 0),
+        reason: catalog.json?.pending?.kind === "countdown" ? "settings" : "update",
+      };
+    }
+    rec.lastCountdown = rec.probe.countdown;
+    this.trackTransition(rec, prev);
     // The game crashed inside a panel we launched: the process lives, nodemon waits for a file change.
     if (rec.proc && rec.procState !== "stopping" && rec.probe.serverStatus === "failed" && prev !== "failed") {
       this.log(rec, "[admin] game server reported a crash");
       this.crashed(rec, () => this.game(rec.id, "start"));
     }
-    if (rec.probe.serverStatus === "online" && rec.note?.startsWith("Crashed;")) {
-      rec.note = `Recovered after a crash at ${new Date(rec.crashes.at(-1)).toLocaleTimeString()}`;
-    }
+    // Back online: the crash is over, so its message goes (the console and log file keep the record).
+    const up = rec.probe.serverStatus === "online" || (!rec.probe.panelUp && rec.probe.gameUp);
+    if (up && rec.note && rec.crashed) rec.note = null;
+    if (up) rec.crashed = false;
     if (rec.probe.serverStatus === "online" && rec.crashes.length && Date.now() - rec.crashes.at(-1) > CRASH_WINDOW_MS) rec.crashes = [];
   }
 
@@ -273,6 +289,9 @@ export class Fleet extends EventEmitter {
     rec.procState = "running";
     rec.startedAt = Date.now();
     rec.stopRequested = false;
+    // A crash's automatic restart shows as a restart; a plain launch as a launch.
+    if (auto && rec.transition?.kind !== "restart") this.beginTransition(rec, "restart", "starting");
+    this.beginTransition(rec, "launch", "starting");
     for (const s of [proc.stdout, proc.stderr]) {
       let rest = "";
       s.setEncoding("utf8");
@@ -289,6 +308,9 @@ export class Fleet extends EventEmitter {
       rec.procState = null;
       rec.probe = null; // the last poll described the process that just ended
       rec.lastExit = { code, signal, at: Date.now(), requested: rec.stopRequested };
+      // A restart carries on to its launch; anything else has ended here.
+      if (rec.transition?.kind === "restart") rec.transition.phase = "starting";
+      else rec.transition = null;
       this.log(rec, `[admin] exited (${signal ?? `code ${code}`})`);
       if (!rec.stopRequested && !this.closing) this.crashed(rec, () => this.start(rec.id, { auto: true }));
       this.emit("state");
@@ -302,22 +324,77 @@ export class Fleet extends EventEmitter {
     const now = Date.now();
     rec.crashes = rec.crashes.filter((t) => now - t < CRASH_WINDOW_MS);
     rec.crashes.push(now);
-    if (!this.settings.autorestart[this.key(rec)]) { rec.note = "Crashed"; return; }
+    rec.crashed = true; // cleared, with its message, once the world is online again
+    const when = new Date(now).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+    if (!this.settings.autorestart[this.key(rec)]) {
+      rec.note = `The game stopped unexpectedly at ${when}. The console shows its last messages.`;
+      return;
+    }
     const n = rec.crashes.length - 1;
     if (n >= BACKOFF.length) {
-      rec.note = `Gave up after ${rec.crashes.length} crashes in 15 minutes`;
+      rec.note = `Gave up restarting after ${rec.crashes.length} crashes in 15 minutes (last at ${when}).`;
       this.log(rec, `[admin] ${rec.note}`);
       return;
     }
     const delay = BACKOFF[n] * 1000;
     rec.retryAt = now + delay;
-    rec.note = `Crashed; restarting in ${BACKOFF[n]} s`;
+    rec.note = `The game stopped unexpectedly at ${when}.`;
     this.log(rec, `[admin] auto-restart in ${BACKOFF[n]} s (attempt ${n + 1}/${BACKOFF.length})`);
     clearTimeout(rec.retryTimer);
     rec.retryTimer = setTimeout(() => {
       rec.retryAt = null;
       Promise.resolve(again()).catch((err) => this.log(rec, `[admin] auto-restart failed: ${err.message}`));
     }, delay);
+  }
+
+  /**
+   * What the world tab shows while a world goes down or comes back: rec.transition is
+   * { kind: "shutdown" | "restart" | "launch", phase: "saving" | "closing" | "starting", startedAt,
+   *   players, deadline }. The panel sets it for what it does; trackTransition follows the world
+   * through it on every poll and notices restarts the panel didn't start (a countdown reaching 0,
+   * ::update in game).
+   */
+  beginTransition(rec, kind, phase) {
+    const t = rec.transition;
+    // A restart passes through a shutdown and a launch: it stays a restart from start to online.
+    const keep = t?.kind === "restart" && kind !== "restart";
+    rec.transition = {
+      kind: keep ? "restart" : kind,
+      phase,
+      startedAt: keep ? t.startedAt : Date.now(),
+      players: keep ? t.players : rec.probe?.players ?? null,
+      leftOnline: keep ? t.leftOnline : false,
+      deadline: phase === "saving" ? Date.now() + STOP_GRACE_MS : null,
+    };
+    this.emit("state");
+  }
+
+  trackTransition(rec, prevStatus) {
+    const status = rec.probe?.serverStatus ?? (rec.probe?.gameUp ? "online" : null);
+    const t = rec.transition;
+    if (t && Date.now() - t.startedAt > 15 * 60_000) rec.transition = null; // never stuck on screen
+    else if (t && t.kind !== "shutdown") {
+      if (status !== "online") t.leftOnline = true;
+      if (status === "online" && (t.kind === "launch" || t.leftOnline)) rec.transition = null;
+      else if (status === "stopping" || status === "stopped") t.phase = "saving";
+      else if (status === "starting" || (!status && rec.proc)) t.phase = "starting";
+    } else if (!t && prevStatus === "online" && (status === "stopping" || status === "starting")) {
+      rec.transition = { kind: "restart", phase: status === "stopping" ? "saving" : "starting", startedAt: Date.now(),
+        players: rec.lastPlayers ?? null, leftOnline: true, deadline: null };
+    }
+    if (rec.probe?.players != null) rec.lastPlayers = rec.probe.players;
+  }
+
+  /** Cancels the in-game update countdown, and the settings change waiting on it. */
+  async cancelUpdate(id) {
+    const rec = this.get(id);
+    if (!rec.token || !rec.probe?.panelUp) throw Object.assign(new Error("The world settings page isn't reachable."), { status: 409 });
+    const r = await getJsonBody({ port: rec.ports.worldAdmin, path: "/api/cancel", token: rec.token, body: {} });
+    if (r.status !== 200 || r.json?.cancelled !== true) throw Object.assign(new Error("There was no countdown to cancel."), { status: 409 });
+    this.log(rec, "[admin] update countdown cancelled");
+    rec.lastCountdown = null;
+    await this.probe(rec);
+    this.emit("state");
   }
 
   /** Asks the game to save players and stop, then waits until it reports stopped (or the grace runs out). */
@@ -337,13 +414,15 @@ export class Fleet extends EventEmitter {
   async stopExternal(rec) {
     if (rec.procState === "stopping") return;
     rec.procState = "stopping";
-    this.emit("state");
+    this.beginTransition(rec, "shutdown", "saving");
     try {
       await this.saveAndStopGame(rec);
+      this.beginTransition(rec, "shutdown", "closing");
       const pids = await listeningPids(Object.values(rec.ports).filter((p) => typeof p === "number"));
       this.log(rec, `[admin] ending terminal-started processes: ${pids.join(", ") || "none left"}`);
       for (const pid of pids) await killTree(pid);
     } finally {
+      rec.transition = null;
       rec.procState = null;
       rec.probe = null;
       await this.probe(rec).catch(() => {});
@@ -364,10 +443,11 @@ export class Fleet extends EventEmitter {
     if (rec.procState === "stopping") return;
     rec.stopRequested = true;
     rec.procState = "stopping";
-    this.emit("state");
+    this.beginTransition(rec, "shutdown", "saving");
     const exited = new Promise((r) => (rec.stopResolve = r));
     await this.saveAndStopGame(rec);
     if (rec.proc) {
+      this.beginTransition(rec, "shutdown", "closing");
       this.log(rec, "[admin] ending process tree");
       await killTree(rec.proc.pid);
     }
@@ -376,6 +456,7 @@ export class Fleet extends EventEmitter {
 
   async restart(id) {
     const rec = this.get(id);
+    this.beginTransition(rec, "restart", "saving");
     if (rec.proc && rec.probe?.serverStatus === "online") return this.game(id, "restart");
     await this.stop(id);
     await this.start(id);
@@ -390,6 +471,8 @@ export class Fleet extends EventEmitter {
     if (r.status === 0) throw Object.assign(new Error("The world config page isn't reachable; is the server running with `yarn start`?"), { status: 409 });
     if (r.status >= 400) throw Object.assign(new Error(r.json?.error ?? `HTTP ${r.status}`), { status: 409 });
     this.log(rec, `[admin] game ${action} requested`);
+    if (action === "start") this.beginTransition(rec, "launch", "starting");
+    else if (action === "restart" && rec.transition?.kind !== "restart") this.beginTransition(rec, "restart", "saving");
   }
 
   /**
@@ -416,6 +499,7 @@ export class Fleet extends EventEmitter {
       const r = await getJsonBody({ port: rec.ports.worldAdmin, path: "/api/apply", token: rec.token, body: { changes, localHash, seconds: 60 } });
       if (r.status >= 400 || r.status === 0) fail(r.json?.error ?? r.json?.errors?.join("; ") ?? `World settings refused the change (HTTP ${r.status}).`);
       const applied = r.json?.applied;
+      if (applied === "restarting") this.beginTransition(rec, "restart", "saving");
       this.log(rec, `[admin] world type -> ${label} (${applied})`);
       return {
         result: applied,
@@ -613,6 +697,8 @@ export class Fleet extends EventEmitter {
       lastExit: rec.lastExit ?? null,
       note: rec.note,
       retryAt: rec.retryAt,
+      transition: rec.transition ?? null,
+      countdown: rec.probe?.countdown ?? null,
       autostart: !!this.settings.autostart[k],
       autorestart: !!this.settings.autorestart[k],
       world: { ...rec.world, number: 300 + (rec.ports.slot ?? 0) },
