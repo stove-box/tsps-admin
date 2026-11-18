@@ -634,9 +634,10 @@ function renderChat() {
   const lines = [];
   for (const e of all.slice(-3000)) {
     const p = parse(e.line);
+    if (!p.text.trim()) continue; // the client's build prints spacer lines; they only add gaps
     if (chatFilter === "error" ? !isError(p.text) : chatFilter !== "all" && p.who !== chatFilter) continue;
     if (q && !e.line.toLowerCase().includes(q)) continue;
-    lines.push(p);
+    lines.push({ ...p, t: e.t });
   }
   const s = current();
   if (lines.length === 0) {
@@ -645,13 +646,18 @@ function renderChat() {
       : "Welcome to the console. Launch the world to see its messages here."}</span>`;
     return;
   }
+  // Three columns per line: a dim time, who said it, and the message, whose leading "[cache]"-style
+  // tags are dimmed so the words after them stand out. Long messages wrap under the message only.
   body.innerHTML = lines.slice(-2000).map((p) => {
-    const cls = p.who === "admin" ? "admin-line" : isError(p.text) ? "err" : isWarn(p.text) ? "warn" : "";
-    const who = p.who ? `<span class="who ${p.who}">${WHO[p.who]}:</span> ` : "";
-    return `<span class="ln">${who}<span class="${cls}">${esc(p.text)}</span></span>`;
+    const kind = p.who === "admin" ? "admin" : isError(p.text) ? "err" : isWarn(p.text) ? "warn" : "";
+    const text = esc(p.text.trim()).replace(/^((?:\[[^\]\n]{1,40}\]\s*)+)/, '<span class="tag">$1</span>');
+    return `<div class="ln ${kind}"><span class="time">${lineTime(p.t)}</span>`
+      + `<span class="who ${p.who || "other"}">${WHO[p.who] ?? ""}</span><span class="msg">${text}</span></div>`;
   }).join("");
   if ($("#chat-follow").checked) body.scrollTop = body.scrollHeight;
 }
+
+const lineTime = (t) => (t ? new Date(t).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false }) : "");
 async function loadLogs(id) {
   const res = await fetch(`/api/logs?id=${encodeURIComponent(id)}`);
   if (res.ok) logLines.set(id, (await res.json()).lines);

@@ -258,24 +258,34 @@ button.stone.icon svg { width: 18px; height: 18px; }
 /* Takes whatever height is left, so the page fits the window instead of scrolling. */
 .chatbox { flex: 1 1 0; min-height: 220px; display: flex; flex-direction: column; border: 2px solid var(--stone-edge); border-radius: 3px; box-shadow: inset 0 0 0 1px var(--stone-hi), 0 6px 18px var(--shadow); overflow: hidden; background: var(--stone); }
 .chat-body {
-  flex: 1; overflow: auto; margin: 4px 4px 0; padding: 6px 10px;
-  background: linear-gradient(rgba(255, 255, 255, .08), rgba(0, 0, 0, .06)), var(--parchment);
-  border: 1px solid #6e6046; box-shadow: inset 0 0 18px rgba(80, 60, 20, .35);
-  color: var(--ink); text-shadow: none; white-space: pre-wrap; overflow-wrap: anywhere;
+  flex: 1; overflow: auto; margin: 4px 4px 0; padding: 6px 4px;
+  /* a softer, warmer parchment than before, so a screenful of text doesn't glare */
+  background: linear-gradient(rgba(255, 250, 235, .18), rgba(120, 95, 50, .06)), #cdbf9c;
+  border: 1px solid #6e6046; box-shadow: inset 0 0 22px rgba(90, 65, 25, .28);
+  color: #2b2418; text-shadow: none; overflow-wrap: anywhere;
+  font: 16px/22px var(--rs);
 }
-.chat-body .ln { display: block; }
+/* time | who | message; a long message wraps under itself, not under the time */
+.chat-body .ln { display: grid; grid-template-columns: 62px 52px minmax(0, 1fr); column-gap: 10px; padding: 1px 8px; border-bottom: 1px solid rgba(110, 90, 55, .12); }
+.chat-body .ln:hover { background: rgba(255, 250, 235, .22); }
+.chat-body .time { color: #8a7a5c; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.chat-body .who { white-space: nowrap; }
+.chat-body .who.server { color: #2d4a7a; }
+.chat-body .who.client { color: #6a3d6a; }
+.chat-body .who.admin { color: #2a6058; }
+.chat-body .msg { white-space: pre-wrap; }
+.chat-body .tag { color: #8a7a5c; }
+.chat-body .ln.admin .msg { color: #2a6058; }
+.chat-body .ln.warn { background: rgba(200, 140, 30, .14); }
+.chat-body .ln.warn .msg { color: #6e4300; }
+.chat-body .ln.err { background: rgba(180, 40, 30, .12); box-shadow: inset 3px 0 0 rgba(160, 30, 20, .55); }
+.chat-body .ln.err .msg { color: #8e1a12; }
+.chat-body .empty { display: block; padding: 4px 8px; color: #6e6046; }
 /* The console keeps its own scrollbar (it's how you read back), drawn as a slim stone bar. */
 .chat-body, .job pre { scrollbar-width: thin; scrollbar-color: #6e6046 transparent; }
 .chat-body::-webkit-scrollbar, .job pre::-webkit-scrollbar { width: 8px; height: 8px; }
 .chat-body::-webkit-scrollbar-thumb, .job pre::-webkit-scrollbar-thumb { background: #6e6046; border-radius: 4px; border: 2px solid transparent; background-clip: padding-box; }
 .chat-body::-webkit-scrollbar-track, .job pre::-webkit-scrollbar-track { background: transparent; }
-.chat-body .who { color: #0000ff; }
-.chat-body .who.client { color: #7f007f; }
-.chat-body .who.admin { color: #00599c; }
-.chat-body .err { color: #b00000; }
-.chat-body .warn { color: #8a4b00; }
-.chat-body .admin-line { color: #003c7a; }
-.chat-body .empty { color: #5d5137; }
 .chat-tabs { display: flex; align-items: center; gap: 4px; padding: 4px; flex-wrap: wrap; }
 .chat-tabs [role="tab"] {
   min-width: 64px; height: 30px; padding: 0 10px; font: 16px/1 var(--rs); color: var(--rs-white); text-shadow: 1px 1px 0 #000;
