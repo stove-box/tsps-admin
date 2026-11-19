@@ -20,18 +20,14 @@
       <div class="title"><strong>TSPS</strong><span class="sep">|</span><span class="long">Server Admin Panel</span></div>
     </div>
     <div class="bar-right">
-      <span id="conn" class="conn" title="Live updates">Connecting</span>
-      <button type="button" id="panel-restart" class="stone" title="Restart this admin panel, e.g. to load panel updates">
+      <span id="conn" class="conn">Connecting</span>
+      <button type="button" id="panel-restart" class="stone">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v8M6.3 6.3a8 8 0 1 0 11.4 0" /></svg>
         <span class="label">Restart panel</span>
       </button>
-      <button type="button" id="fetch" class="stone" title="git fetch --all --prune">
+      <button type="button" id="fetch" class="stone" aria-label="Check for updates">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.3-5.7M20 4v5h-5" /></svg>
         <span class="label">Check for updates</span>
-      </button>
-      <button type="button" id="new" class="stone gold">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>
-        <span class="label">New world</span>
       </button>
     </div>
   </header>
@@ -39,8 +35,13 @@
   <aside id="switcher" class="switcher" aria-label="World Switcher">
     <div class="switcher-panel osrs">
       <div class="switcher-title">
+        <button type="button" id="reorder" class="addr-btn icon-btn" aria-label="Reorder worlds">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 20V4M3 8l4-4 4 4M17 4v16M13 16l4 4 4-4" /></svg>
+        </button>
         <h2 class="rs-title">World Switcher</h2>
-        <button type="button" id="reorder" class="addr-btn" title="Change the order and numbers of the worlds">Edit</button>
+        <button type="button" id="new" class="addr-btn icon-btn" aria-label="New world">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>
+        </button>
       </div>
       <div class="switcher-head" aria-hidden="true">
         <span></span><span>World</span><span>Players</span><span>Activity</span>
@@ -51,7 +52,7 @@
     <section id="jobs-wrap" class="jobs-panel osrs" aria-labelledby="jobs-title" hidden>
       <div class="jobs-head">
         <h2 class="rs-title" id="jobs-title">Recent jobs</h2>
-        <button type="button" id="jobs-clear" class="addr-btn" title="Remove finished jobs from this list">Clear</button>
+        <button type="button" id="jobs-clear" class="addr-btn">Clear</button>
       </div>
       <div id="jobs" class="jobs"></div>
     </section>
@@ -70,7 +71,7 @@
         <button type="button" role="tab" data-filter="admin">Panel</button>
         <button type="button" role="tab" data-filter="error">Errors</button>
         <input id="chat-search" type="search" placeholder="Search" aria-label="Search console">
-        <label class="osrs-check" title="Keep scrolled to the newest line">
+        <label class="osrs-check">
           <input id="chat-follow" type="checkbox" checked><span class="box" aria-hidden="true"></span><span>Follow</span>
         </label>
       </div>
@@ -94,12 +95,27 @@
       <summary>Advanced</summary>
       <label for="new-base">Start from</label>
       <input type="text" id="new-base" name="base" placeholder="origin/main" autocomplete="off" spellcheck="false">
-      <p class="new-note" title="A branch or commit. If a branch with the world's name already exists, the world uses that branch instead.">Leave it empty to start from the latest main.</p>
+      <p class="new-note">Leave it empty to start from the latest main.</p>
     </details>
     <p class="new-note">Takes a few minutes; it opens here when ready.</p>
     <div class="confirm-actions">
       <button type="submit" value="ok" class="stone gold" id="new-create" disabled>Create world</button>
       <button type="button" class="stone" id="new-cancel">Cancel</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- XP rate: one field; the note says whether the world restarts to apply it. -->
+<dialog id="xp-dialog" class="osrs-dialog confirm-dialog new-dialog" aria-labelledby="xp-title">
+  <form method="dialog" id="xp-form" novalidate>
+    <h2 class="rs-title" id="xp-title">Change the XP rate?</h2>
+    <label for="xp-rate">XP rate</label>
+    <input type="text" id="xp-rate" inputmode="decimal" autocomplete="off" spellcheck="false" placeholder="e.g. 5" aria-describedby="xp-error xp-note">
+    <p id="xp-error" class="field-error" role="alert" hidden></p>
+    <p id="xp-note" class="new-note"></p>
+    <div class="confirm-actions">
+      <button type="submit" value="ok" class="stone gold" id="xp-save" disabled>Change rate</button>
+      <button type="button" class="stone" id="xp-cancel">Cancel</button>
     </div>
   </form>
 </dialog>

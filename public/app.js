@@ -6,6 +6,7 @@ const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "
 let state = { servers: [], tasks: [] };
 let selected = null;
 let chatFilter = "all";
+let worldTab = "update"; // the world view's tab: "update" (Options & Updates) or "connection"
 const logLines = new Map(); // id -> [{t, line}]
 const busy = new Set(); // `${id}:${action}` waiting for a response
 
@@ -37,20 +38,20 @@ function worldIcon(world) {
   const k = iconKind(world);
   const sprite = SPRITE[k.kind];
   const label = k.kind === "league" ? world.typeLabel ?? sprite.label : sprite.label;
-  return `<img class="star sprite ${k.kind}" src="${sprite.src}" width="${sprite.size}" height="${sprite.size}" alt="${esc(label)} world" title="${esc(label)}">`;
+  return `<img class="star sprite ${k.kind}" src="${sprite.src}" width="${sprite.size}" height="${sprite.size}" alt="${esc(label)} world">`;
 }
 
 /** The world type as the list's Activity column shows it: "Leagues VI - Demonic Pacts" becomes "Leagues VI". */
 const typeName = (world) => world.typeLabel ?? (world.members === false ? "Free-to-play" : "Members");
 const shortType = (world) => typeName(world).replace(/\s+-\s+.*$/, "");
 const ICON = {
+  play: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14l11-7z" /></svg>',
   power: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v9" /><path d="M6.3 6.3a8 8 0 1 0 11.4 0" /></svg>',
   restart: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.3-5.7M20 4v5h-5" /></svg>',
   settings: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z" /></svg>',
   update: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11m0 0-4-4m4 4 4-4M5 19h14" /></svg>',
   people: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8" r="3.5" /><path d="M2.5 20a6.5 6.5 0 0 1 13 0M16 4.5a3.5 3.5 0 0 1 0 7M21.5 20a6.5 6.5 0 0 0-4-6" /></svg>',
   clock: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></svg>',
-  crown: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 8l4.5 4L12 5l4.5 7L21 8l-2 11H5z" /></svg>',
   xp: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19l5-6 4 3 7-9" /><path d="M15 7h5v5" /></svg>',
   trash: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 12a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1l1-12M9 7V4h6v3" /></svg>',
 };
@@ -59,6 +60,15 @@ const store = {
   get(k) { try { return localStorage.getItem(k); } catch { return null; } },
   set(k, v) { try { localStorage.setItem(k, v); } catch {} },
 };
+if (store.get("tsps-admin:tab") === "connection") worldTab = "connection";
+
+/** Shows world tab `id` and keeps focus on its tab (the world view is redrawn). */
+function showTab(id) {
+  worldTab = id;
+  store.set("tsps-admin:tab", id);
+  renderWorld();
+  $(`#tab-${id}`)?.focus();
+}
 
 function toast(msg, kind = "error") {
   const el = $("#toast");
@@ -81,10 +91,11 @@ async function post(path, body = {}) {
  * confirm(). Focus starts on No, so a stray Enter doesn't do the thing; Escape also says no.
  * Resolves to true only for Yes.
  */
-function askConfirm({ title, text, yes = "Yes", no = "No", danger = false, list = null, check = null, card = "", note = "" }) {
+function askConfirm({ title, text = "", yes = "Yes", no = "No", danger = false, list = null, check = null, card = "", note = "" }) {
   const d = $("#confirm-dialog");
   $("#confirm-title").textContent = title;
   $("#confirm-text").textContent = text;
+  $("#confirm-text").hidden = !text;
   // Optional preview card (markup built by the caller from escaped values) and a closing note.
   $("#confirm-card").innerHTML = card;
   $("#confirm-card").hidden = !card;
@@ -131,11 +142,8 @@ function restartQuestion(s) {
   const arrow = `<span class="arrow" aria-hidden="true">&rarr;</span>`;
   return {
     title: `Restart World ${n}?`,
-    text: "The world shuts down and comes straight back up.",
     card: `<div class="type-change">${step(save)}${arrow}${step("Shut down")}${arrow}${step("Start up", "to")}</div>`,
-    note: s.status === "online" && s.players
-      ? "Players are disconnected while it restarts, usually for under a minute."
-      : "Usually back online in under a minute.",
+    note: s.status === "online" && s.players ? "Players are offline for about a minute." : "Back online in about a minute.",
     yes: "Restart",
     no: "Cancel",
   };
@@ -165,6 +173,15 @@ function duration(ms) {
   return `${Math.floor(s / 3600)}h ${Math.floor((s % 3600) / 60)}m`;
 }
 
+/**
+ * Text that changes, in a box that doesn't: every version is laid out in the same spot and only `text`
+ * shows, so the box is always as wide as the longest one (world heading, status pill, Check for updates, Copy).
+ */
+function steady(text, all) {
+  const list = all.includes(text) ? all : [text, ...all];
+  return `<span class="steady">${list.map((t) => `<span${t === text ? "" : ' class="ghost" aria-hidden="true"'}>${esc(t)}</span>`).join("")}</span>`;
+}
+
 // Only touch the DOM when the markup changed, so a click isn't lost to a redraw every poll.
 function setHtml(el, html) {
   if (el._html !== html) { el.innerHTML = html; el._html = html; }
@@ -178,7 +195,7 @@ function creatingRows() {
     const type = t.type ?? "members";
     const label = newWorldTypes().find((x) => x.id === type)?.label ?? "Members";
     return `
-    <div class="world-row is-creating" role="note" title="Creating a ${esc(label)} world from ${esc(t.detail ?? "")}">
+    <div class="world-row is-creating" role="note">
       ${worldIcon({ type, typeLabel: label, members: type !== "f2p" })}
       <span class="num">...</span>
       <span class="count">...</span>
@@ -189,40 +206,62 @@ function creatingRows() {
 
 let reorder = null; // world ids top to bottom while the World Switcher's Edit is open, else null
 
-/** A row in Edit mode: its new number, and arrows to move it. */
-function editRow(s, i, last) {
+let dragging = null; // the world id being dragged in Edit mode
+
+/** A row in Edit mode: its new number and a grip. Drag it, or focus it and press the up/down arrow keys. */
+const offline = (s) => s.status === "offline" || s.status === "game-stopped" || s.status === "failed";
+
+function editRow(s, i, count) {
   const n = `World ${s.world.number} (${esc(activityOf(s))})`;
   return `
-    <div class="world-row is-editing" data-id="${esc(s.id)}" title="${n}">
+    <div class="world-row is-editing ${offline(s) ? "is-offline" : ""} ${s.id === dragging ? "is-dragging" : ""}" data-id="${esc(s.id)}" tabindex="0"
+      ${s.id === selected ? 'aria-current="true"' : ""}
+      aria-label="${n}, position ${i + 1} of ${count}. Drag, or press the up and down arrow keys, to move it.">
       ${worldIcon(s.world)}
       <span class="num">${i + 1}</span>
-      <span class="move">
-        <button type="button" class="addr-btn" data-move="-1" aria-label="Move ${n} up" ${i === 0 ? "disabled" : ""}>&#9650;</button>
-        <button type="button" class="addr-btn" data-move="1" aria-label="Move ${n} down" ${i === last ? "disabled" : ""}>&#9660;</button>
-      </span>
+      <span class="grip" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M5 8h14M5 12h14M5 16h14" /></svg></span>
       <span class="activity">${esc(shortType(s.world))}</span>
     </div>`;
 }
 
+/** Edit mode: moves world `id` to place `to` in the list and redraws, sliding the rows from where they were. */
+function moveTo(id, to) {
+  const rows = () => [...$("#world-list").children];
+  const was = new Map(rows().map((r) => [r.dataset.id, r.getBoundingClientRect().top]));
+  reorder.splice(reorder.indexOf(id), 1);
+  reorder.splice(to, 0, id);
+  renderSwitcher();
+  if (matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+  for (const r of rows()) {
+    const dy = was.get(r.dataset.id) - r.getBoundingClientRect().top;
+    if (!dy || r.dataset.id === dragging) continue; // the dragged row stays under the pointer
+    // Not hit-testable while it slides: the drag would otherwise find it under the pointer and swap it straight back.
+    r.style.pointerEvents = "none";
+    r.animate([{ transform: `translateY(${dy}px)` }, { transform: "none" }], { duration: 180, easing: "ease-out" })
+      .finished.finally(() => { r.style.pointerEvents = ""; });
+  }
+}
+
 function renderSwitcher() {
   $("#reorder").hidden = !!reorder;
+  $("#new").hidden = !!reorder;
+  $("#switcher").classList.toggle("reordering", !!reorder);
   $("#reorder").disabled = state.servers.length < 2;
   if (reorder) {
     // Worlds added or removed while editing: drop the gone ones, add new ones at the bottom.
     const ids = new Set(state.servers.map((s) => s.id));
     reorder = [...reorder.filter((id) => ids.has(id)), ...state.servers.map((s) => s.id).filter((id) => !reorder.includes(id))];
     const byId = new Map(state.servers.map((s) => [s.id, s]));
-    setHtml($("#world-list"), reorder.map((id, i) => editRow(byId.get(id), i, reorder.length - 1)).join(""));
+    setHtml($("#world-list"), reorder.map((id, i) => editRow(byId.get(id), i, reorder.length)).join(""));
     setHtml($("#total"), `<div class="reorder-actions"><button type="button" class="stone gold" data-reorder="save">Save</button><button type="button" class="stone" data-reorder="cancel">Cancel</button></div>`);
     return renderJobs();
   }
   setHtml($("#world-list"), state.servers.map((s) => {
-    const off = s.status === "offline" || s.status === "game-stopped" || s.status === "failed";
     const count = s.status === "online" ? (s.players ?? 0)
       : BUSY.has(s.status) ? "..." : s.status === "failed" ? "CRASH" : "OFF";
     return `
-    <button type="button" class="world-row ${off ? "is-offline" : ""} ${BUSY.has(s.status) ? "is-busy" : ""}" data-id="${esc(s.id)}"
-      ${s.id === selected ? 'aria-current="true"' : ""} title="World ${s.world.number}: ${esc(typeName(s.world))}, ${esc(STATUS[s.status] ?? s.status)} (branch ${esc(activityOf(s))})">
+    <button type="button" class="world-row ${offline(s) ? "is-offline" : ""} ${BUSY.has(s.status) ? "is-busy" : ""}" data-id="${esc(s.id)}"
+      ${s.id === selected ? 'aria-current="true"' : ""}>
       ${worldIcon(s.world)}
       <span class="num">${s.world.number}</span>
       <span class="count">${count}</span>
@@ -232,25 +271,15 @@ function renderSwitcher() {
 
   const online = state.servers.filter((s) => s.status === "online");
   const players = online.reduce((n, s) => n + (s.players ?? 0), 0);
-  setHtml($("#total"), `<b>${players}</b> players on <b>${online.length}</b> of ${state.servers.length} worlds`);
+  setHtml($("#total"), `<span><b>${players}</b> ${players === 1 ? "player" : "players"} online</span><span><b>${online.length}</b> of ${state.servers.length} worlds up</span>`);
 
   renderJobs();
 }
 
-/** Edit's Save: ask, listing each world whose number changes, then save the order. */
+/** Edit's Save: saves the order, if it changed, and leaves Edit mode. */
 async function saveOrder() {
-  const order = reorder;
-  const moved = order.map((id, i) => [state.servers.find((s) => s.id === id), i + 1]).filter(([s, n]) => s.world.number !== n);
-  if (moved.length) {
-    const ok = await askConfirm({
-      title: "Save the new world order?",
-      text: "Only the numbers in this panel change. Ports, addresses and players stay as they are, so no world restarts.",
-      list: { title: "Renumbered", items: moved.map(([s, n]) => `World ${s.world.number} → World ${n}  (${activityOf(s)})`) },
-      yes: "Save",
-      no: "Keep editing",
-    });
-    if (!ok) return;
-    try { await post("/api/order", { ids: order }); }
+  if (reorder.some((id, i) => state.servers.find((s) => s.id === id).world.number !== i + 1)) {
+    try { await post("/api/order", { ids: reorder }); }
     catch (err) { return toast(err.message); }
   }
   reorder = null;
@@ -297,16 +326,19 @@ function jobStatus(t) {
 const jobRunning = (key) => (state.tasks ?? []).some((t) => t.key === key && t.state === "running");
 
 /** "Check for updates" rests while a check runs, then comes back. */
+const COPY = ["Copy", "Copied"];
+
 function renderFetchButton() {
   const checking = jobRunning("fetch") || busy.has("fetch");
   const btn = $("#fetch");
   btn.disabled = checking;
-  btn.querySelector(".label").textContent = checking ? "Checking..." : "Check for updates";
+  btn.querySelector(".label").innerHTML = steady(checking ? "Checking..." : "Check for updates", ["Check for updates", "Checking..."]);
 }
 
 function renderJobs() {
   renderFetchButton();
-  const jobs = (state.tasks ?? []).slice(0, 6);
+  // Finished jobs drop off after 5 minutes (the page redraws on every 3 s poll); failed ones stay until Clear.
+  const jobs = (state.tasks ?? []).filter((t) => t.state !== "done" || Date.now() - (t.endedAt ?? t.at) < 5 * 60_000).slice(0, 6);
   $("#jobs-wrap").hidden = jobs.length === 0;
   $("#jobs-clear").hidden = !jobs.some((t) => t.state !== "running");
   // Details sits on the card's title line and opens the output in a dialog, so the list never grows.
@@ -357,13 +389,13 @@ setInterval(() => { if (state.tasks?.length) renderJobs(); }, 1000);
 // ---- selected world ----
 
 /** One Connection row: what it is, the address (a link when it opens in a browser), and Copy. */
-function address(label, value, { href = null, hint = "" } = {}) {
+function address(label, value, { href = null } = {}) {
   const shown = esc(value.replace(/^https?:\/\//, ""));
   return `
-    <li class="address" ${hint ? `title="${esc(hint)}"` : ""}>
+    <li class="address">
       <span class="addr-label">${esc(label)}</span>
       ${href ? `<a class="addr-value link" href="${esc(href)}" target="_blank" rel="noopener">${shown}</a>` : `<span class="addr-value">${shown}</span>`}
-      <button type="button" class="addr-btn" data-copy="${esc(value)}" aria-label="Copy ${esc(label)} address">Copy</button>
+      <button type="button" class="addr-btn" data-copy="${esc(value)}" aria-label="Copy ${esc(label)} address">${steady("Copy", COPY)}</button>
     </li>`;
 }
 
@@ -372,48 +404,48 @@ function heroActions(s) {
   const n = s.world.number;
   const stopping = s.status === "stopping";
   const play = running(s) && s.status === "online"
-    ? `<a class="play" href="${esc(s.links.client)}" target="_blank" rel="noopener">Play<small>World ${n}</small></a>`
-    : `<span class="play off" aria-disabled="true">Play<small>${esc(STATUS[s.status] ?? s.status)}</small></span>`;
+    ? `<a class="play" href="${esc(s.links.client)}" target="_blank" rel="noopener"><span class="play-orb">${ICON.play}</span>Play World ${n}</a>`
+    : `<span class="play off" aria-disabled="true"><span class="play-orb">${ICON.play}</span>Play World ${n}</span>`;
 
   // Three buttons of one size under Play, always in the same places: power, restart, settings.
-  // One that can't be used now stays, greyed, with a tooltip saying why.
-  const off = (icon, label, why) => `<button type="button" class="stone" disabled title="${esc(why)}">${icon}${label}</button>`;
-  const shutDown = () => `<button type="button" class="stone red" ${stopping ? "disabled" : b("stop")} data-act="stop" data-confirm="stop"
-      title="Save players and stop World ${n}">${ICON.power}${stopping ? "Stopping" : "Shut down"}</button>`;
+  // One that can't be used now stays, greyed.
+  const off = (icon, label) => `<button type="button" class="stone" disabled>${icon}${label}</button>`;
+  const shutDown = () => `<button type="button" class="stone red" ${stopping ? "disabled" : b("stop")} data-act="stop" data-confirm="stop">${ICON.power}${stopping ? "Stopping" : "Shut down"}</button>`;
   const gameDown = running(s) && (s.status === "game-stopped" || s.status === "failed");
 
   let first;
   let second;
   if (!running(s)) {
-    first = `<button type="button" class="stone gold" ${b("start")} data-act="start" title="Start World ${n}">${ICON.power}Launch</button>`;
-    second = off(ICON.restart, "Restart", "Launch the world first");
+    first = `<button type="button" class="stone gold" ${b("start")} data-act="start">${ICON.power}Launch</button>`;
+    second = off(ICON.restart, "Restart");
   } else if (gameDown) {
     // The process is up but the game isn't: start the game, or shut the whole world down.
-    first = `<button type="button" class="stone gold" ${b("game-start")} data-act="game-start" title="Start the game again">${ICON.power}Start</button>`;
+    first = `<button type="button" class="stone gold" ${b("game-start")} data-act="game-start">${ICON.power}Start</button>`;
     second = shutDown();
   } else {
     first = shutDown();
     const act = s.managed ? "restart" : "game-restart";
     second = stopping || !(s.managed || s.panelUp)
-      ? off(ICON.restart, "Restart", stopping ? "World is shutting down" : "Restart it from the terminal it was launched in")
-      : `<button type="button" class="stone" ${b(act)} data-act="${act}" data-confirm="restart" title="Save players and restart World ${n}">${ICON.restart}Restart</button>`;
+      ? off(ICON.restart, "Restart")
+      : `<button type="button" class="stone" ${b(act)} data-act="${act}" data-confirm="restart">${ICON.restart}Restart</button>`;
   }
   const settings = s.links.worldAdmin && s.panelUp
-    ? `<a class="stone" href="${esc(s.links.worldAdmin)}" target="_blank" rel="noopener" title="Open World ${n}'s settings page">${ICON.settings}Settings</a>`
-    : off(ICON.settings, "Settings", "The world settings page opens while the world is running");
-  return `${play}<div class="world-buttons">${first}${second}${settings}</div>`;
+    ? `<a class="stone" href="${esc(s.links.worldAdmin)}" target="_blank" rel="noopener">${ICON.settings}Settings</a>`
+    : off(ICON.settings, "Settings");
+  // While the world goes down or comes back, its progress tile takes Play's place (Play can't be used then anyway).
+  return `${transitionBanner(s) || play}<div class="world-buttons">${first}${second}${settings}</div>`;
 }
 
 /**
- * While the world goes down or comes back, this takes the stat tiles' place, drawn like one wide tile
- * (same height, so the page never grows): the in-game update countdown ("System update in 0:47"),
+ * While the world goes down or comes back, this takes the Play button's place, at its size, so the
+ * page never grows: the in-game update countdown ("System update in 0:47"),
  * a shutdown, restart or launch with a running clock and the step it's on, or the wait before an
- * automatic restart after a crash. The longer explanation is its tooltip.
+ * automatic restart after a crash.
  */
 function transitionBanner(s) {
   const n = s.world.number;
-  const tile = ({ icon, kind, title, line, tip, extra = "" }) => `
-    <div class="transit osrs ${kind}" role="status" ${tip ? `title="${esc(tip)}"` : ""}>
+  const tile = ({ icon, kind, title, line, extra = "" }) => `
+    <div class="transit osrs ${kind}" role="status">
       <span class="orb">${icon}</span>
       <div class="tr-text"><div class="v">${title}</div><div class="k">${esc(line)}</div></div>
       ${extra}
@@ -424,8 +456,7 @@ function transitionBanner(s) {
     return tile({
       icon: ICON.clock, kind: "update",
       title: `System update in <span data-until="${cd.endsAt}"></span>`,
-      line: cd.reason === "settings" ? "Restarting to apply the new world settings" : "Update started in game",
-      tip: `World ${n} restarts when it reaches 0:00. Players are saved first.`,
+      line: cd.reason === "settings" ? "Applying new world settings" : "Update started in game",
       extra: `<button type="button" class="stone" ${busy.has(`${s.id}:cancel-update`) ? "disabled" : ""} data-act="cancel-update">Cancel</button>
         <div class="tr-bar"><span data-bar-until="${cd.endsAt}" data-total="${(cd.total || 60) * 1000}"></span></div>`,
     });
@@ -445,9 +476,6 @@ function transitionBanner(s) {
       title: `${{ shutdown: "Shutting down", restart: "Restarting", launch: "Launching" }[t.kind] ?? "Working"} World ${n}
         <span class="tr-clock" data-since="${t.startedAt}"></span>`,
       line: steps.length > 1 ? `${step} (step ${at + 1} of ${steps.length})` : step,
-      tip: t.phase === "saving" && t.deadline
-        ? `If saving takes longer than ${clock(t.deadline - t.startedAt)}, the server is stopped anyway.`
-        : t.phase === "starting" ? "Usually ready in under a minute; the console below shows progress." : "",
     });
   }
   if (s.retryAt && s.retryAt > Date.now()) {
@@ -455,7 +483,6 @@ function transitionBanner(s) {
       icon: ICON.restart, kind: "restart",
       title: `Restarting after a crash in <span data-until="${s.retryAt}"></span>`,
       line: "Shut down to stop it trying again",
-      tip: `Restart after a crash is on for World ${n}.`,
     });
   }
   return "";
@@ -474,30 +501,26 @@ function tickTimers() {
 
 function banners(s) {
   const out = [];
-  if (s.external) out.push(`<div class="banner info">This world was launched from a terminal, so its console is there. Shut down still saves players first.</div>`);
   // While the crash restart counts down, its banner already says so.
   const waiting = s.retryAt && s.retryAt > Date.now();
   if (s.note && !waiting) out.push(`<div class="banner ${/stopped unexpectedly|Gave up/.test(s.note) ? "error" : "warn"}">${esc(s.note)}</div>`);
   return out.join("");
 }
 
-function stat(icon, value, label, id) {
-  return `<div class="stat osrs"><span class="orb">${icon}</span><div><div class="v"${id ? ` id="${id}"` : ""}>${value}</div><div class="k">${label}</div></div></div>`;
-}
-
 /** The World type dropdown's button, in the world heading. Its list is #type-menu. */
 function typePicker(s) {
   const label = `<span class="type-label">${esc(typeName(s.world))}</span>`;
+  const xp = `${ICON.xp}<span class="xp-val">x${esc(s.world.xp)} XP</span>`;
   // A panel process older than world types sends none: show the type without the dropdown.
-  if (!s.world.types?.length) return `<div class="type-pick"><span class="type-static">${worldIcon(s.world)}${label}</span></div>`;
-  const changing = busy.has(`${s.id}:world-type`) || BUSY.has(s.status) || (s.external && !s.panelUp);
+  if (!s.world.types?.length) return `<div class="type-pick"><span class="type-static">${worldIcon(s.world)}${label}</span><span class="fact">${xp}</span></div>`;
+  const changing = busy.has(`${s.id}:world-type`) || busy.has(`${s.id}:xp-rate`) || BUSY.has(s.status) || (s.external && !s.panelUp);
   return `
     <div class="type-pick">
       <button type="button" id="type-select" class="type-select" data-type-menu aria-haspopup="listbox" aria-label="World type: ${esc(typeName(s.world))}"
-        aria-expanded="${menuFor() === s.id}" aria-controls="type-menu" ${changing ? "disabled" : ""}
-        title="${changing ? "Wait until the world has finished starting or shutting down" : "Change the world type (restarts the server)"}">
+        aria-expanded="${menuFor() === s.id}" aria-controls="type-menu" ${changing ? "disabled" : ""}>
         ${worldIcon(s.world)}${label}<span class="caret" aria-hidden="true"></span>
       </button>
+      <button type="button" class="fact xp-btn" data-xp ${changing ? "disabled" : ""} aria-label="XP rate: x${esc(s.world.xp)}. Change it">${xp}<svg class="pencil" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16zM13.5 6.5l4 4" /></svg></button>
     </div>`;
 }
 
@@ -618,12 +641,17 @@ document.addEventListener("mousedown", (e) => {
 window.addEventListener("resize", () => closeTypeMenu());
 document.addEventListener("scroll", () => positionMenu(), true);
 
+/** What happens when a world setting changes, for World type and XP rate. */
+function changeNote(s) {
+  return s.status !== "online" ? "Applies at the next launch."
+    : s.players ? "Restarts after a 60-second countdown." : "Restarts the server.";
+}
+
 async function changeWorldType(type) {
   const s = current();
   if (!s) return;
   const label = s.world.types.find((t) => t.id === type)?.label ?? type;
   const n = s.world.number;
-  const online = s.status === "online";
   // Laid out like New world: title, one line, a card showing the change with its world icons, a note.
   const to = { type, typeLabel: label, members: type !== "f2p" };
   const ok = await askConfirm({
@@ -635,9 +663,7 @@ async function changeWorldType(type) {
         <span class="arrow" aria-label="to">&rarr;</span>
         <span class="to">${worldIcon(to)}<span>${esc(label)}</span></span>
       </div>`,
-    note: !online ? "It takes effect the next time you launch the world."
-      : s.players ? `The server restarts to apply it. The ${s.players} player${s.players === 1 ? "" : "s"} online get a 60-second update countdown first and are saved.`
-      : "The server restarts to apply it.",
+    note: changeNote(s),
     yes: "Change type",
     no: "Cancel",
   });
@@ -655,6 +681,58 @@ async function changeWorldType(type) {
   }
 }
 
+// ---- XP rate dialog ----
+
+let xpFor = null; // the world the XP dialog is for
+
+/** The typed rate, or null: a number above 0 ("5", "1.5", "x10" all work). */
+function xpValue() {
+  const v = $("#xp-rate").value.trim().replace(/^x/i, "");
+  const n = Number(v);
+  return v && Number.isFinite(n) && n > 0 ? n : null;
+}
+
+function updateXp() {
+  const n = xpValue();
+  const bad = $("#xp-rate").value.trim() !== "" && n === null;
+  $("#xp-error").textContent = bad ? "Enter a number above 0, like 1, 1.5 or 10." : "";
+  $("#xp-error").hidden = !bad;
+  $("#xp-save").disabled = n === null || n === state.servers.find((x) => x.id === xpFor)?.world.xp;
+}
+
+function openXp() {
+  const s = current();
+  if (!s) return;
+  xpFor = s.id;
+  $("#xp-title").textContent = `Change World ${s.world.number}'s XP rate?`;
+  $("#xp-rate").value = String(s.world.xp);
+  $("#xp-note").textContent = changeNote(s);
+  updateXp();
+  $("#xp-dialog").showModal();
+  $("#xp-rate").setSelectionRange(99, 99); // caret at the end, nothing highlighted
+}
+
+$("#xp-rate").oninput = updateXp;
+$("#xp-cancel").onclick = () => $("#xp-dialog").close("cancel");
+$("#xp-form").onsubmit = async (e) => {
+  e.preventDefault();
+  const rate = xpValue();
+  const id = xpFor;
+  if (rate === null || $("#xp-save").disabled) return;
+  $("#xp-dialog").close("ok");
+  busy.add(`${id}:xp-rate`);
+  renderWorld();
+  try {
+    const r = await post(`/api/servers/${id}/xp-rate`, { rate });
+    if (r.message) toast(r.message, "info");
+  } catch (err) {
+    toast(err.message);
+  } finally {
+    busy.delete(`${id}:xp-rate`);
+    renderWorld();
+  }
+};
+
 function renderWorld() {
   const s = current();
   const el = $("#world");
@@ -670,16 +748,17 @@ function renderWorld() {
   const sync = !g?.upstream ? "No upstream"
     : waiting ? `<span class="bad">${waiting} behind</span>${g.ahead ? `, ${g.ahead} ahead` : ""}`
     : g.ahead ? `${g.ahead} ahead` : `<span class="good">Up to date</span>`;
-  const pullTip = g?.fork?.repo
-    ? `Syncs your fork ${g.fork.repo} with ${g.fork.parent} on GitHub (like its Sync fork button), then pulls`
-    : "git pull --ff-only";
 
   setHtml(el, `
     <div class="hero osrs">
       <div class="hero-main">
         <div class="hero-name">
-          <h1>World ${s.world.number}</h1>
-          <span class="state st-${esc(s.status)}" role="status">${esc(STATUS[s.status] ?? s.status)}</span>
+          <h1>${steady(`World ${s.world.number}`, state.servers.map((w) => `World ${w.world.number}`))}</h1>
+          <span class="state st-${esc(s.status)}" role="status">${steady(STATUS[s.status] ?? s.status, Object.values(STATUS))}</span>
+          ${s.external ? `<span class="elsewhere">Running outside this panel</span>` : ""}
+          ${s.status === "online" ? `<span class="fact">${ICON.people}${s.players ?? 0} online</span>` : ""}
+          ${running(s) && s.startedAt ? `<span class="fact">${ICON.clock}Up <span id="uptime">-</span></span>`
+            : !running(s) && lastExit ? `<span class="fact">${ICON.clock}Shut down ${esc(lastExit)}</span>` : ""}
         </div>
         ${typePicker(s)}
         <div class="worldname">${esc(s.world.name)}${s.world.description ? ` <span class="dim">- ${esc(s.world.description)}</span>` : ""}
@@ -688,30 +767,29 @@ function renderWorld() {
       <div class="hero-actions">${heroActions(s)}</div>
     </div>
     ${banners(s)}
-    ${transitionBanner(s) || `
-    <div class="stats">
-      ${stat(ICON.people, s.status === "online" ? (s.players ?? 0) : "-", "Players online")}
-      ${!running(s) && lastExit ? stat(ICON.clock, lastExit, "Last shut down") : stat(ICON.clock, "-", "Uptime", "uptime")}
-      ${stat(ICON.xp, `x${s.world.xp}`, "XP rate")}
-      ${stat(ICON.crown, s.managed ? "This panel" : s.external ? "A terminal" : "-", "Launched by")}
-    </div>`}
-    <div class="panels">
-      <section class="panel osrs">
-        <h2 class="rs-title">Connection</h2>
-        <ul class="addresses">
-          ${address("Game client", s.links.client, { href: running(s) ? s.links.client : null, hint: "Open in a browser to play" })}
-          ${address("Game server", `localhost:${p.game}`, { hint: "The game's WebSocket port" })}
-          ${address("Agent MCP", s.links.mcp, { hint: "For Claude Code: claude mcp add --transport http tsps <address>" })}
-          ${address("RuneLite gateway", `localhost:${p.gateway}`, { hint: "For the official client through RSProx" })}
-          <li class="address">
-            <span class="addr-label">Folder</span>
-            <span class="addr-value" title="${esc(s.dir)}">${esc(folderOf(s))}</span>
-            <button type="button" class="addr-btn" ${b("open-folder")} data-act="open-folder" title="Show the folder in Explorer">Open</button>
-          </li>
-        </ul>
-      </section>
-      <section class="panel osrs">
-        <h2 class="rs-title">Game update</h2>
+    <section class="panel osrs world-tabs">
+      <div class="tabs" role="tablist" aria-label="World details">
+        <button type="button" role="tab" id="tab-update" data-tab="update" aria-controls="tabpanel-update" aria-selected="${worldTab === "update"}" tabindex="${worldTab === "update" ? 0 : -1}">Options &amp; Updates</button>
+        <button type="button" role="tab" id="tab-connection" data-tab="connection" aria-controls="tabpanel-connection" aria-selected="${worldTab === "connection"}" tabindex="${worldTab === "connection" ? 0 : -1}">Connection</button>
+      </div>
+      <div class="tabpanels">
+        <div role="tabpanel" id="tabpanel-update" aria-labelledby="tab-update" class="tab-cols" ${worldTab === "update" ? "" : "data-off"}>
+          <div class="tab-col">
+            <h3 class="rs-title">Options</h3>
+        <div class="options">
+          <label class="osrs-check"><input type="checkbox" data-flag="autostart" ${s.autostart ? "checked" : ""}><span class="box" aria-hidden="true"></span><span>Launch when the panel opens</span></label>
+          <p class="hint">Starts this world whenever the admin panel starts.</p>
+          <label class="osrs-check"><input type="checkbox" data-flag="autorestart" ${s.autorestart ? "checked" : ""}><span class="box" aria-hidden="true"></span><span>Restart after a crash</span></label>
+          <p class="hint">Waits 5 s, 15 s, 30 s, 1 min, 2 min, then 5 min; gives up after 6 crashes in 15 minutes.</p>
+        </div>
+        ${s.main ? "" : `
+        <div class="remove-world">
+          <button type="button" class="stone red" ${running(s) || b("remove") ? "disabled" : ""} data-remove>${ICON.trash}Remove world</button>
+          <p class="hint">Deletes its folder and player saves; the ${esc(activityOf(s))} branch is kept.</p>
+        </div>`}
+          </div>
+          <div class="tab-col">
+            <h3 class="rs-title">Game update</h3>
         ${g ? `
         <dl class="kv">
           <dt>Branch</dt><dd class="y">${esc(g.branch ?? "?")}</dd>
@@ -722,25 +800,25 @@ function renderWorld() {
         ${g.last ? `<div class="commit osrs-inset"><code>${esc(g.last.hash)}</code> ${esc(g.last.subject)} <span class="when">- ${esc(g.last.when)}</span></div>` : ""}
         ${g.upstream ? (jobRunning(`update:${s.id}`) || busy.has(`${s.id}:pull`)
           ? `<div class="links"><button type="button" class="stone" disabled>${ICON.update}Updating...</button></div>`
-          : `<div class="links"><button type="button" class="stone" data-act="pull" title="${esc(pullTip)}">${ICON.update}${waiting ? `Update (${waiting} new)` : "Update"}</button></div>`) : ""}`
+          : `<div class="links"><button type="button" class="stone" data-act="pull">${ICON.update}${waiting ? `Update (${waiting} new)` : "Update"}</button></div>`) : ""}`
         : `<p class="rs" style="margin:0;color:#e8dcc0">Loading...</p>`}
-      </section>
-      <section class="panel osrs">
-        <h2 class="rs-title">Options</h2>
-        <div class="options">
-          <label class="osrs-check"><input type="checkbox" data-flag="autostart" ${s.autostart ? "checked" : ""}><span class="box" aria-hidden="true"></span><span>Launch when the panel opens</span></label>
-          <p class="hint">Starts this world whenever the admin panel starts.</p>
-          <label class="osrs-check"><input type="checkbox" data-flag="autorestart" ${s.autorestart ? "checked" : ""}><span class="box" aria-hidden="true"></span><span>Restart after a crash</span></label>
-          <p class="hint">Waits 5 s, 15 s, 30 s, 1 min, 2 min, then 5 min; gives up after 6 crashes in 15 minutes.</p>
+          </div>
         </div>
-        ${s.main ? "" : `
-        <div class="remove-world">
-          <button type="button" class="stone red" ${running(s) || b("remove") ? "disabled" : ""} data-remove
-            title="${running(s) ? "Shut the world down first" : `Remove World ${s.world.number}`}">${ICON.trash}Remove world</button>
-          <p class="hint">Deletes its folder and player saves; the ${esc(activityOf(s))} branch is kept.</p>
-        </div>`}
-      </section>
-    </div>`);
+        <div role="tabpanel" id="tabpanel-connection" aria-labelledby="tab-connection" ${worldTab === "connection" ? "" : "data-off"}>
+        <ul class="addresses">
+          ${address("Game client", s.links.client, { href: running(s) ? s.links.client : null })}
+          ${address("Game server", `localhost:${p.game}`)}
+          ${address("Agent MCP", s.links.mcp)}
+          ${address("RuneLite gateway", `localhost:${p.gateway}`)}
+          <li class="address">
+            <span class="addr-label">Folder</span>
+            <span class="addr-value">${esc(folderOf(s))}</span>
+            <button type="button" class="addr-btn" ${b("open-folder")} data-act="open-folder">Open</button>
+          </li>
+        </ul>
+        </div>
+      </div>
+    </section>`);
   tickUptime();
   tickTimers();
   if (menuFor() && menuFor() !== s.id && menuFor() !== "new") closeTypeMenu();
@@ -870,18 +948,41 @@ $("#menu-backdrop").onclick = closeMenu;
 $("#world-list").addEventListener("click", (e) => {
   const row = e.target.closest(".world-row");
   if (!row) return;
-  if (!reorder) return select(row.dataset.id);
-  const btn = e.target.closest("button[data-move]");
-  if (!btn) return;
-  const d = Number(btn.dataset.move);
-  const i = reorder.indexOf(row.dataset.id);
-  [reorder[i], reorder[i + d]] = [reorder[i + d], reorder[i]];
-  renderSwitcher();
-  // The list was redrawn: keep focus on the moved world's arrow (the other one at either end).
-  const moved = (sel) => $(`#world-list [data-id="${CSS.escape(row.dataset.id)}"] ${sel}`);
-  (moved(`[data-move="${d}"]:not(:disabled)`) ?? moved("[data-move]:not(:disabled)"))?.focus();
+  if (!reorder) select(row.dataset.id);
 });
-$("#reorder").onclick = () => { reorder = state.servers.map((s) => s.id); renderSwitcher(); $("#world-list [data-move]:not(:disabled)")?.focus(); };
+// Edit mode drag: pointer events, so mouse and touch both work. The list holds the pointer capture,
+// since every move redraws the rows under it.
+$("#world-list").addEventListener("pointerdown", (e) => {
+  const row = reorder && e.button === 0 && e.target.closest(".world-row");
+  if (!row) return;
+  dragging = row.dataset.id;
+  e.currentTarget.setPointerCapture(e.pointerId);
+  row.classList.add("is-dragging"); // in place, not a redraw, which would cut off a slide in progress
+});
+$("#world-list").addEventListener("pointermove", (e) => {
+  if (!dragging) return;
+  const over = document.elementFromPoint(e.clientX, e.clientY)?.closest("#world-list .world-row");
+  if (over && over.dataset.id !== dragging) moveTo(dragging, reorder.indexOf(over.dataset.id));
+});
+for (const type of ["pointerup", "pointercancel"]) {
+  $("#world-list").addEventListener(type, () => {
+    if (!dragging) return;
+    dragging = null;
+    $("#world-list .is-dragging")?.classList.remove("is-dragging");
+  });
+}
+$("#world-list").addEventListener("keydown", (e) => {
+  const row = reorder && e.target.closest(".world-row");
+  const d = { ArrowUp: -1, ArrowDown: 1 }[e.key];
+  if (!row || !d) return;
+  e.preventDefault();
+  const id = row.dataset.id;
+  const to = reorder.indexOf(id) + d;
+  if (to < 0 || to >= reorder.length) return;
+  moveTo(id, to);
+  $(`#world-list [data-id="${CSS.escape(id)}"]`).focus(); // the redraw replaced the row
+});
+$("#reorder").onclick = () => { reorder = state.servers.map((s) => s.id); renderSwitcher(); $("#world-list .world-row")?.focus(); };
 $("#total").addEventListener("click", (e) => {
   const act = e.target.closest("button[data-reorder]")?.dataset.reorder;
   if (act === "cancel") { reorder = null; renderSwitcher(); $("#reorder").focus(); }
@@ -890,11 +991,14 @@ $("#total").addEventListener("click", (e) => {
 $("#world").addEventListener("click", (e) => {
   if (!selected) return;
   if (e.target.closest("button[data-remove]")) return openRemove();
+  if (e.target.closest("button[data-xp]")) return openXp();
+  const tab = e.target.closest("[role=tab][data-tab]");
+  if (tab) return showTab(tab.dataset.tab);
   if (e.target.closest("button[data-type-menu]")) return menu.hidden ? openTypeMenu(worldTypeMenu()) : closeTypeMenu(true);
   const copy = e.target.closest("button[data-copy]");
   if (copy) {
     return navigator.clipboard.writeText(copy.dataset.copy)
-      .then(() => { copy.textContent = "Copied"; setTimeout(() => (copy.textContent = "Copy"), 1500); })
+      .then(() => { copy.innerHTML = steady("Copied", COPY); setTimeout(() => (copy.innerHTML = steady("Copy", COPY)), 1500); })
       .catch(() => toast("Couldn't copy; select the address and copy it by hand."));
   }
   const btn = e.target.closest("button[data-act]");
@@ -904,6 +1008,14 @@ $("#world").addEventListener("click", (e) => {
   }
 });
 $("#world").addEventListener("keydown", (e) => {
+  // Tabs: left/right (and Home/End) move between them, as a tab list does.
+  if (e.target.closest("[role=tab][data-tab]") && ["ArrowLeft", "ArrowRight", "Home", "End"].includes(e.key)) {
+    e.preventDefault();
+    const ids = ["update", "connection"];
+    const i = ids.indexOf(worldTab);
+    showTab({ ArrowLeft: ids[(i + ids.length - 1) % ids.length], ArrowRight: ids[(i + 1) % ids.length], Home: ids[0], End: ids.at(-1) }[e.key]);
+    return;
+  }
   if (e.target.closest("button[data-type-menu]") && (e.key === "ArrowDown" || e.key === "ArrowUp")) {
     e.preventDefault();
     openTypeMenu(worldTypeMenu());
