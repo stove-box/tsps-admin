@@ -590,15 +590,23 @@ export class Fleet extends EventEmitter {
   }
 
   async startOnBoot() {
+    // Worlds that were running when the panel restarted itself come back too, once.
+    const resume = new Set(this.settings.resume ?? []);
+    if (resume.size) { delete this.settings.resume; this.saveSettings(); }
     for (const rec of this.servers.values()) {
-      if (!this.settings.autostart[this.key(rec)]) continue;
+      if (!this.settings.autostart[this.key(rec)] && !resume.has(this.key(rec))) continue;
       if (rec.proc || rec.probe?.gameUp || rec.probe?.panelUp) continue;
       await this.start(rec.id).catch((err) => console.error(`[admin] autostart ${rec.id}: ${err.message}`));
     }
   }
 
-  async shutdown() {
+  /** Stops the worlds this panel started. `resume`: note them so the next panel starts them again. */
+  async shutdown({ resume = false } = {}) {
     this.closing = true;
+    if (resume) {
+      this.settings.resume = [...this.servers.values()].filter((r) => r.proc).map((r) => this.key(r));
+      this.saveSettings();
+    }
     clearTimeout(this.timer);
     await Promise.all([...this.servers.values()].filter((r) => r.proc).map((r) => this.stop(r.id).catch(() => {})));
   }

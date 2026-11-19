@@ -919,6 +919,26 @@ $("#fetch").onclick = () => {
   renderFetchButton();
   post("/api/git/fetch").catch((err) => toast(err.message)).finally(() => { busy.delete("fetch"); renderFetchButton(); });
 };
+let panelRestarting = false; // reload the page once the new panel answers, so it gets the new page too
+$("#panel-restart").onclick = async () => {
+  const mine = state.servers.filter((s) => s.managed);
+  const players = mine.reduce((n, s) => n + (s.players ?? 0), 0);
+  const ok = await askConfirm({
+    title: "Restart the panel?",
+    text: mine.length
+      ? `The ${mine.length === 1 ? "world" : `${mine.length} worlds`} this panel started (${mine.map((s) => `World ${s.world.number}`).join(", ")}) ${mine.length === 1 ? "shuts" : "shut"} down and ${mine.length === 1 ? "starts" : "start"} again with the new panel.${players ? ` ${players} player${players === 1 ? " is" : "s are"} saved and disconnected.` : ""}`
+      : "No world this panel started is running, so no world is affected.",
+    note: "Worlds launched from a terminal keep running. This page reloads when the panel is back.",
+    yes: "Restart panel",
+    no: "Cancel",
+  });
+  if (!ok) return;
+  panelRestarting = true;
+  $("#panel-restart").disabled = true;
+  try { await post("/api/panel/restart"); toast("Restarting the panel...", "info"); }
+  catch (err) { panelRestarting = false; $("#panel-restart").disabled = false; toast(err.message); }
+};
+
 // ---- New world ----
 
 /** A typed name as a branch git accepts: spaces become dashes, characters git refuses are dropped. */
@@ -1033,7 +1053,7 @@ window.addEventListener("hashchange", () => select(location.hash.slice(1)));
 function connect() {
   const es = new EventSource("/api/events");
   const conn = $("#conn");
-  es.onopen = () => { conn.className = "conn live"; conn.textContent = "Live"; };
+  es.onopen = () => { if (panelRestarting) location.reload(); conn.className = "conn live"; conn.textContent = "Live"; };
   es.onerror = () => { conn.className = "conn down"; conn.textContent = "Reconnecting"; };
   es.addEventListener("state", (e) => {
     state = JSON.parse(e.data);

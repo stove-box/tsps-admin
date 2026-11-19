@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { spawn } from "node:child_process";
 import crypto from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import http from "node:http";
@@ -172,6 +173,7 @@ async function handle(req, res) {
     if (result === "pending") work.catch((err) => console.error(`[admin] ${action} ${id}: ${err.message}`));
     return send(res, 202, { ok: true, task: result?.id ?? null });
   }
+  if (url.pathname === "/api/panel/restart") { send(res, 202, { ok: true }); quit({ restart: true }); return; }
   if (url.pathname === "/api/order") { fleet.setOrder(body.ids); return send(res, 200, { ok: true }); }
   if (url.pathname === "/api/git/fetch") return send(res, 202, { ok: true, task: fleet.fetchAll().id });
   if (url.pathname === "/api/tasks/clear") { fleet.clearTasks(); return send(res, 200, { ok: true }); }
@@ -201,14 +203,26 @@ server.on("error", (err) => {
   process.exit(1);
 });
 
+/** A fresh panel in its own window, as the Startup shortcut opens it (minimized). */
+function relaunch() {
+  if (process.platform === "win32") {
+    spawn("cmd.exe", ["/d", "/c", 'start "tsps admin" /min start-panel.cmd'], { cwd: ROOT, detached: true, stdio: "ignore", windowsVerbatimArguments: true }).unref();
+  } else {
+    // shortcut: no terminal to print to, so the new panel's console output is dropped; its world logs still go to data/logs.
+    spawn(process.execPath, process.argv.slice(1), { cwd: ROOT, detached: true, stdio: "ignore" }).unref();
+  }
+}
+
 let quitting = false;
-async function quit() {
-  if (quitting) return process.exit(1);
+async function quit({ restart = false } = {}) {
+  if (quitting) return restart || process.exit(1);
   quitting = true;
-  console.info("[admin] stopping the servers this panel started (Ctrl+C again to force)...");
+  console.info(restart ? "[admin] restarting the panel: stopping the servers it started, to start them again..."
+    : "[admin] stopping the servers this panel started (Ctrl+C again to force)...");
   server.close();
   for (const res of clients) res.end();
-  await fleet.shutdown();
+  await fleet.shutdown({ resume: restart });
+  if (restart) relaunch();
   process.exit(0);
 }
 // A failed background job (a stop that times out, a probe) is logged, never fatal: the panel keeps watching.

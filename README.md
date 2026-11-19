@@ -62,6 +62,8 @@ FreeToPlay plugin is off, as in the server), and from the live world once it's o
   uncommitted changes, the dialog lists them and removes it with `git worktree remove --force` only
   after you tick "Discard these changes". The branch is always kept.
 - **Ctrl+C** in the panel's console shuts down the worlds it launched (players are saved), then exits.
+- **Restart panel** (top bar) does the same, then opens a new panel in its own minimized window, which starts
+  those worlds again; the page reloads when it's back.
 
 ## Configuration
 
