@@ -130,16 +130,18 @@ export function failureLine(lines) {
 }
 
 /**
- * A world's number, for display only: World 1 is the main checkout, then the others count on in the
- * order they were created (oldest first), so the list always reads 1, 2, 3... and a removal closes
- * the gap. `all` is every world the panel knows; `createdAt` is when the world's folder was made.
+ * A world's number, for display only. `order` (folder keys, from settings.json) is the order set
+ * with the World Switcher's Edit; worlds not in it (all of them until then, and new ones) follow
+ * in the default order: the main checkout, then the others oldest first. So the list always reads
+ * 1, 2, 3... and a removal closes the gap. `all` is every world the panel knows; `key` maps a world
+ * to its folder key; `createdAt` is when the world's folder was made.
  */
-export function worldNumber(rec, all) {
-  if (rec.main) return 1;
-  const others = all.filter((r) => !r.main && r.ports?.slot != null)
-    .sort((a, b) => (a.createdAt ?? 0) - (b.createdAt ?? 0) || a.ports.slot - b.ports.slot);
-  const i = others.indexOf(rec);
-  return 2 + (i < 0 ? others.length : i);
+export function worldNumber(rec, all, order = [], key = (r) => r.dir) {
+  const at = (r) => { const i = order.indexOf(key(r)); return i < 0 ? Infinity : i; };
+  const sorted = all.filter((r) => r.main || r.ports?.slot != null)
+    .sort((a, b) => at(a) - at(b) || b.main - a.main || (a.createdAt ?? 0) - (b.createdAt ?? 0) || (a.ports.slot ?? 0) - (b.ports.slot ?? 0));
+  const i = sorted.indexOf(rec);
+  return 1 + (i < 0 ? sorted.length : i);
 }
 
 const slug = (dir) => basename(dir).toLowerCase().replace(/[^a-z0-9-]+/g, "-");
@@ -155,7 +157,7 @@ export class Fleet extends EventEmitter {
     this.logDir = join(dataDir, "logs");
     mkdirSync(this.logDir, { recursive: true });
     this.settingsFile = join(dataDir, "settings.json");
-    this.settings = { autostart: {}, autorestart: {} };
+    this.settings = { autostart: {}, autorestart: {}, order: [] };
     try { Object.assign(this.settings, JSON.parse(readFileSync(this.settingsFile, "utf8"))); } catch {}
     this.closing = false;
   }
@@ -547,7 +549,7 @@ export class Fleet extends EventEmitter {
       this.log(rec, `[admin] world type -> ${label} (${applied})`);
       return {
         result: applied,
-        message: applied === "countdown" ? `Players get a ${r.json.seconds}-second update countdown, then World ${worldNumber(rec, [...this.servers.values()])} restarts as ${label}.`
+        message: applied === "countdown" ? `Players get a ${r.json.seconds}-second update countdown, then World ${this.number(rec)} restarts as ${label}.`
           : applied === "restarting" ? `Restarting as ${label}.`
           : `Saved. Restart the world to become ${label}.`,
       };
@@ -560,7 +562,22 @@ export class Fleet extends EventEmitter {
     rec.world = worldInfo(rec.dir);
     this.log(rec, `[admin] world type -> ${label} (saved for the next launch)`);
     this.emit("state");
-    return { result: "written", message: `Saved. World ${worldNumber(rec, [...this.servers.values()])} is ${label} from its next launch.` };
+    return { result: "written", message: `Saved. World ${this.number(rec)} is ${label} from its next launch.` };
+  }
+
+  number(rec) {
+    return worldNumber(rec, [...this.servers.values()], this.settings.order, (r) => this.key(r));
+  }
+
+  /** The World Switcher's Edit: `ids` is every world, top to bottom. Display only, so nothing restarts. */
+  setOrder(ids) {
+    const all = [...this.servers.values()];
+    if (!Array.isArray(ids) || ids.length !== all.length || new Set(ids).size !== ids.length) {
+      throw Object.assign(new Error("The world list changed; reload and try again."), { status: 409 });
+    }
+    this.settings.order = ids.map((id) => this.key(this.get(id)));
+    this.saveSettings();
+    this.emit("state");
   }
 
   setFlags(id, { autostart, autorestart }) {
@@ -649,7 +666,7 @@ export class Fleet extends EventEmitter {
   pull(id) {
     const rec = this.get(id);
     if (!rec.git?.upstream) throw Object.assign(new Error("This branch has no upstream to pull from."), { status: 409 });
-    const n = worldNumber(rec, [...this.servers.values()]);
+    const n = this.number(rec);
     return this.task({ kind: "update", title: `Update World ${n}`, detail: rec.branch, key: `update:${rec.id}`, cooldownMs: 10_000 }, async (onLine, job) => {
       // Following the fork's default branch: bring the fork up to its parent on GitHub first, as
       // GitHub's "Sync fork" does. gh refuses (fast-forward only) if the fork's branch has its own commits.
@@ -686,7 +703,7 @@ export class Fleet extends EventEmitter {
       if (code !== 0) return code;
       await this.refresh();
       const rec = [...this.servers.values()].find((r) => samePath(r.dir, dir));
-      const n = rec ? worldNumber(rec, [...this.servers.values()]) : null;
+      const n = rec ? this.number(rec) : null;
       const world = n ? `World ${n}` : "The world";
       if (n) job.title = `Create World ${n}`;
       job.summary = `${world} is ready`;
@@ -715,7 +732,7 @@ export class Fleet extends EventEmitter {
     if (rec.proc || rec.probe?.gameUp || rec.probe?.panelUp) throw Object.assign(new Error("Shut the world down first."), { status: 409 });
     await this.refreshGit(rec);
     const dir = rec.dir.replace(/\\/g, "/");
-    const meta = { kind: "remove", title: `Remove World ${worldNumber(rec, [...this.servers.values()])}`, detail: rec.branch ?? basename(rec.dir), key: `remove:${rec.id}` };
+    const meta = { kind: "remove", title: `Remove World ${this.number(rec)}`, detail: rec.branch ?? basename(rec.dir), key: `remove:${rec.id}` };
     const kept = `Removed; branch ${meta.detail} kept`;
     if (!rec.git?.dirty) {
       return this.task(meta, async (onLine, job) => {
@@ -763,7 +780,7 @@ export class Fleet extends EventEmitter {
       countdown: rec.probe?.countdown ?? null,
       autostart: !!this.settings.autostart[k],
       autorestart: !!this.settings.autorestart[k],
-      world: { ...rec.world, number: worldNumber(rec, [...this.servers.values()]) },
+      world: { ...rec.world, number: this.number(rec) },
       git: rec.git && { ...rec.git, fork: rec.forkBehind == null ? null : { behind: rec.forkBehind, parent: this.forkParent ?? null, repo: this.forkRepo ?? null } },
       links: {
         client: `http://localhost:${rec.ports.client}`,

@@ -143,6 +143,13 @@ button.stone.icon svg { width: 18px; height: 18px; }
 .star.sprite.league { filter: hue-rotate(75deg) saturate(1.5) brightness(1.05) drop-shadow(1px 1px 0 #000); }
 .switcher-foot { padding: 8px 6px 2px; text-align: center; color: var(--rs-yellow); }
 .switcher-foot b { color: var(--rs-white); font-weight: normal; }
+/* Edit (reorder) mode: the Edit button sits in the title like Recent jobs' Clear; rows get arrows. */
+.switcher-title { position: relative; }
+.switcher-title .addr-btn { position: absolute; right: 2px; top: 1px; min-width: 0; }
+.world-row.is-editing { cursor: default; }
+.world-row .move { display: flex; gap: 3px; }
+.world-row .move .addr-btn { min-width: 0; width: 26px; height: 22px; padding: 0; }
+.switcher-foot .reorder-actions { display: flex; justify-content: center; gap: 8px; }
 
 /* Recent jobs: drawn with the dialogs' pieces. A centred orange title, each job as the dialogs'
    preview card (dark inset, thin orange edge) with its icon inline like a world icon, small stone

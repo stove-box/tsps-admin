@@ -187,7 +187,35 @@ function creatingRows() {
   }).join("");
 }
 
+let reorder = null; // world ids top to bottom while the World Switcher's Edit is open, else null
+
+/** A row in Edit mode: its new number, and arrows to move it. */
+function editRow(s, i, last) {
+  const n = `World ${s.world.number} (${esc(activityOf(s))})`;
+  return `
+    <div class="world-row is-editing" data-id="${esc(s.id)}" title="${n}">
+      ${worldIcon(s.world)}
+      <span class="num">${i + 1}</span>
+      <span class="move">
+        <button type="button" class="addr-btn" data-move="-1" aria-label="Move ${n} up" ${i === 0 ? "disabled" : ""}>&#9650;</button>
+        <button type="button" class="addr-btn" data-move="1" aria-label="Move ${n} down" ${i === last ? "disabled" : ""}>&#9660;</button>
+      </span>
+      <span class="activity">${esc(shortType(s.world))}</span>
+    </div>`;
+}
+
 function renderSwitcher() {
+  $("#reorder").hidden = !!reorder;
+  $("#reorder").disabled = state.servers.length < 2;
+  if (reorder) {
+    // Worlds added or removed while editing: drop the gone ones, add new ones at the bottom.
+    const ids = new Set(state.servers.map((s) => s.id));
+    reorder = [...reorder.filter((id) => ids.has(id)), ...state.servers.map((s) => s.id).filter((id) => !reorder.includes(id))];
+    const byId = new Map(state.servers.map((s) => [s.id, s]));
+    setHtml($("#world-list"), reorder.map((id, i) => editRow(byId.get(id), i, reorder.length - 1)).join(""));
+    setHtml($("#total"), `<div class="reorder-actions"><button type="button" class="stone gold" data-reorder="save">Save</button><button type="button" class="stone" data-reorder="cancel">Cancel</button></div>`);
+    return renderJobs();
+  }
   setHtml($("#world-list"), state.servers.map((s) => {
     const off = s.status === "offline" || s.status === "game-stopped" || s.status === "failed";
     const count = s.status === "online" ? (s.players ?? 0)
@@ -207,6 +235,27 @@ function renderSwitcher() {
   setHtml($("#total"), `<b>${players}</b> players on <b>${online.length}</b> of ${state.servers.length} worlds`);
 
   renderJobs();
+}
+
+/** Edit's Save: ask, listing each world whose number changes, then save the order. */
+async function saveOrder() {
+  const order = reorder;
+  const moved = order.map((id, i) => [state.servers.find((s) => s.id === id), i + 1]).filter(([s, n]) => s.world.number !== n);
+  if (moved.length) {
+    const ok = await askConfirm({
+      title: "Save the new world order?",
+      text: "Only the numbers in this panel change. Ports, addresses and players stay as they are, so no world restarts.",
+      list: { title: "Renumbered", items: moved.map(([s, n]) => `World ${s.world.number} → World ${n}  (${activityOf(s)})`) },
+      yes: "Save",
+      no: "Keep editing",
+    });
+    if (!ok) return;
+    try { await post("/api/order", { ids: order }); }
+    catch (err) { return toast(err.message); }
+  }
+  reorder = null;
+  renderSwitcher();
+  renderWorld();
 }
 
 // ---- Recent jobs ----
@@ -820,7 +869,23 @@ $("#menu-backdrop").onclick = closeMenu;
 
 $("#world-list").addEventListener("click", (e) => {
   const row = e.target.closest(".world-row");
-  if (row) select(row.dataset.id);
+  if (!row) return;
+  if (!reorder) return select(row.dataset.id);
+  const btn = e.target.closest("button[data-move]");
+  if (!btn) return;
+  const d = Number(btn.dataset.move);
+  const i = reorder.indexOf(row.dataset.id);
+  [reorder[i], reorder[i + d]] = [reorder[i + d], reorder[i]];
+  renderSwitcher();
+  // The list was redrawn: keep focus on the moved world's arrow (the other one at either end).
+  const moved = (sel) => $(`#world-list [data-id="${CSS.escape(row.dataset.id)}"] ${sel}`);
+  (moved(`[data-move="${d}"]:not(:disabled)`) ?? moved("[data-move]:not(:disabled)"))?.focus();
+});
+$("#reorder").onclick = () => { reorder = state.servers.map((s) => s.id); renderSwitcher(); $("#world-list [data-move]:not(:disabled)")?.focus(); };
+$("#total").addEventListener("click", (e) => {
+  const act = e.target.closest("button[data-reorder]")?.dataset.reorder;
+  if (act === "cancel") { reorder = null; renderSwitcher(); $("#reorder").focus(); }
+  if (act === "save") saveOrder();
 });
 $("#world").addEventListener("click", (e) => {
   if (!selected) return;

@@ -172,6 +172,7 @@ async function handle(req, res) {
     if (result === "pending") work.catch((err) => console.error(`[admin] ${action} ${id}: ${err.message}`));
     return send(res, 202, { ok: true, task: result?.id ?? null });
   }
+  if (url.pathname === "/api/order") { fleet.setOrder(body.ids); return send(res, 200, { ok: true }); }
   if (url.pathname === "/api/git/fetch") return send(res, 202, { ok: true, task: fleet.fetchAll().id });
   if (url.pathname === "/api/tasks/clear") { fleet.clearTasks(); return send(res, 200, { ok: true }); }
   if (url.pathname === "/api/worktrees") {

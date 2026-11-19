@@ -153,6 +153,18 @@ test("worlds are numbered 1, 2, 3... in creation order, closing gaps on removal"
   assert.deepEqual(now.map((w) => worldNumber(w, now)), [1, 2, 3, 4]);
 });
 
+test("a saved order renumbers worlds; ones not in it go at the bottom", async () => {
+  const { worldNumber } = await import("../src/fleet.mjs");
+  const main = { dir: "m", main: true, ports: { slot: null } };
+  const a = { dir: "a", ports: { slot: 1 }, createdAt: 100 };
+  const b = { dir: "b", ports: { slot: 2 }, createdAt: 200 };
+  const c = { dir: "c", ports: { slot: 3 }, createdAt: 300 };
+  const all = [main, a, b, c];
+  // b first, main second; a and c weren't ordered (c is new), so they follow oldest first.
+  const order = ["gone", "b", "m"];
+  assert.deepEqual(all.map((w) => worldNumber(w, all, order)), [2, 3, 1, 4]);
+});
+
 test("GitHub remotes: owner/name from https and ssh URLs", async () => {
   const { githubRepo } = await import("../src/git.mjs");
   assert.equal(githubRepo("https://github.com/stove-box/tsps"), "stove-box/tsps");
