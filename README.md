@@ -1,93 +1,62 @@
 # TSPS | Server Admin Panel
 
-A world management panel for every tsps world on this PC: the main checkout and each `scripts/wt`
-worktree, shown as numbered worlds in an Old School RuneScape style World Switcher.
+One page to run every tsps game world on this PC. Each copy of the game (the main one and any you
+make with **+**) shows up as a numbered world in a World Switcher, like the one in Old School RuneScape.
+From there you can launch worlds, play them, change their type and XP rate, update them, and watch
+their console.
+
+## Start it
+
+Double-click `start-panel.cmd` (or run `npm start`). It prints a link like
+`http://localhost:47100/?token=…`. Open it once and the panel remembers you; after that,
+`http://localhost:47100` is enough.
+
+To have the panel start when you sign in to Windows:
 
 ```
-start-panel.cmd          # or: npm start
+powershell -File scripts/install-startup.ps1          # -Remove to undo
 ```
 
-The console prints `http://localhost:47100/?token=…`. Open that link once; it sets a cookie and the
-panel then works at `http://localhost:47100`. The token is kept in `data/admin.token` (delete it to
-get a new one).
+You need [Node](https://nodejs.org) 22.16 or newer and Git for Windows. Updating a world from your
+fork also needs the GitHub CLI (`gh`), signed in.
 
-## Worlds
+## Using it
 
-Each checkout is a world. Its number is only for display: the main checkout is World 1 and the others
-count on in the order they were created, so the list always reads 1, 2, 3... and removing a world
-closes the gap (each world keeps its own `scripts/wt` slot and ports). The World Switcher's Edit
-button reorders them (saved in the panel's `settings.json`; nothing restarts, as only the numbers change). Name, description, members/free and XP rate come
-from its `server/data/definitions/world.json` with `world.local.json` over it (members while the
-FreeToPlay plugin is off, as in the server), and from the live world once it's online.
+**World Switcher (left).** Click a world to open it. **+** makes a new world from the latest
+RSPSApp/tsps code. The arrows button lets you drag worlds into a new order (✓ saves, ✕ cancels);
+this only changes their numbers, so nothing restarts.
 
-- **Launch world** runs `yarn start` in the worktree. The panel strips `PORT`, `WEBSOCKET_PORT` and the
-  other slot keys from the environment it passes on, because `run-with-env.mjs` lets inherited
-  variables beat `.env`; each world gets its own ports.
-- **Play** opens the world's game client.
-- **Shut down** asks the world's settings page (`/api/server/stop`, with its token) to save players
-  and stop the game, waits up to 60 s, then ends the process tree (`taskkill /T`). A world launched
-  from a terminal is shut down the same way, then the processes listening on its own ports are ended.
-- **Restart server** restarts just the game through the world settings page when it's online.
-- **Console**: the chatbox keeps the last 3000 lines (tabs for Game, Client, Panel and Errors, search,
-  follow); the full log of the current run is in `data/logs/<worktree>.log`, the previous run in
-  `.log.1`.
-- **Restart after a crash** (per world): after an unexpected exit, or a game crash the world settings
-  page reports, it restarts after 5 s, 15 s, 30 s, 1 min, 2 min, 5 min and then gives up until you
-  launch it again. The count resets after 15 minutes online.
-- **World icons** follow the game's World Switcher (oldschool.runescape.wiki/w/World), using the
-  wiki's sprites: the members star (`public/members-world.png`), the free-to-play star
-  (`public/free-world.png`), the members star turned green for Leagues, and the Hardcore Worlds icon
-  (`public/hardcore-world.png`). The World Switcher's Activity column shows the world type; hover a row
-  for its branch.
-- **World type** (dropdown in the world heading, each type with its icon): Members, Free-to-play, Hardcore World (on branches that have it) or one of
-  the leagues in `plugins/modes/data/leagues.json`. Online, it goes through the world settings page's
-  Apply: players are saved (with a 60-second update countdown when anyone is on) and the server
-  restarts as the new type. Offline, `world.local.json` is written for the next launch, with the
-  server's own rules (no override left behind, free-to-play needs the spawn in an f2p zone).
-- **Launch when the panel opens** (per world). To open the panel when you sign in to Windows, run
-  `powershell -File scripts/install-startup.ps1` (`-Remove` undoes it).
-- **Game update**: branch, upstream, ahead/behind, uncommitted files and last commit. **Check for
-  updates** runs `git fetch --all --prune`; **Update** runs `git pull --ff-only`. When the checkout's
-  `origin` is a GitHub fork (stove-box/tsps of RSPSApp/tsps) and the world follows the fork's default
-  branch, Game update also counts the commits the fork's parent has that it doesn't, and Update first
-  syncs the fork on GitHub with `gh repo sync` (fast-forward only, like GitHub's Sync fork), then
-  pulls. This needs the GitHub CLI signed in.
-- **New world** asks only for a name (made into a branch name as you type: spaces become dashes,
-  characters git refuses are dropped), previews the world number, branch and folder it will get, and
-  keeps the starting point under Advanced (default: the latest `main` of https://github.com/RSPSApp/tsps). Its World type picker offers the main
-  checkout's types; the type is written into the new world's `world.local.json` right after
-  `wt new`, so its first launch is already that type. It runs `scripts/wt new <branch>
-  [base]` through Git Bash and opens the new world when it appears.
-- **Remove world** (foot of the Options panel, shut-down worlds only) runs `scripts/wt rm`. If the worktree has
-  uncommitted changes, the dialog lists them and removes it with `git worktree remove --force` only
-  after you tick "Discard these changes". The branch is always kept.
-- **Ctrl+C** in the panel's console shuts down the worlds it launched (players are saved), then exits.
-- **Restart panel** (top bar) does the same, then opens a new panel in its own minimized window, which starts
-  those worlds again; the page reloads when it's back.
+**A world (right).**
+- **Play** opens the game. **Launch**, **Shut down** and **Restart** do what they say. Players are
+  always saved before a world stops.
+- The **world type** dropdown (Members, Free-to-play, Hardcore, Leagues) and the **XP rate** button
+  change the world. If it's online, it restarts to apply them, with a 60-second countdown when
+  players are on. If it's offline, the change applies at the next launch.
+- **Options & Updates:** start the world with the panel, restart it after a crash, pull the latest
+  code, or remove the world (its folder and player saves are deleted).
+- **Connection:** the addresses for the game client, server, Agent MCP and RuneLite gateway.
+- **Console:** the world's live output, with filters for Game, Client, Panel and Errors, and a search
+  box.
 
-## Configuration
+**Bottom left.** **Restart** restarts the panel itself, and the worlds it started come back with it.
+**Update** checks every world for new code. **Recent jobs** shows what's running or just finished.
 
-`config.json` holds the defaults; put overrides in `config.local.json` (gitignored):
+## Settings
+
+`config.json` holds the defaults. Put your own in `config.local.json` (it isn't committed):
 
 ```json
-{ "tspsRepo": "../tsps", "port": 47100, "bash": "C:/Program Files/Git/bin/bash.exe" }
+{ "tspsRepo": "../tsps", "port": 47100 }
 ```
 
-`TSPS_REPO`, `ADMIN_PORT` and `ADMIN_TOKEN` environment variables override these. Options toggled in
-the page are saved in `data/settings.json`.
+## Keep the link private
 
-## Security
+The panel only answers on this PC, but anyone with its link can control your worlds. Treat the link
+like a password; delete `data/admin.token` to get a new one.
 
-The panel listens on 127.0.0.1 only and needs its token on every request (cookie or
-`Authorization: Bearer`). It accepts only `localhost`/`127.0.0.1` Host headers (against DNS
-rebinding), refuses cross-origin writes and requires JSON bodies. It links each world's settings page
-with that world's token, so treat the panel link like a password.
+## Credits
 
-## Development
+The page follows rsps.app/host. World icons are the OSRS wiki's sprites; the RuneScape fonts come from
+the tsps client. IBM Plex Sans is under the SIL Open Font License (`public/ibm-plex-license.txt`).
 
-No dependencies; Node 22.16+. `npm test` runs the unit tests.
-
-The page frame (palette, IBM Plex Sans, gold rules) follows rsps.app/host and the server's world
-config page; the worlds are drawn with OSRS interface pieces and the RuneScape fonts from the tsps
-client (`client/media`). The Plex fonts are under the SIL Open Font License
-(`public/ibm-plex-license.txt`).
+Notes for developers and AI assistants are in [CLAUDE.md](CLAUDE.md).
