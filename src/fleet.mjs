@@ -8,6 +8,9 @@ import { forkBehind, forkOf, gitInfo, listWorktrees, samePath, stream, validBran
 import { applyChanges, availableTypes, changesFor, currentType, merge, readLayers, validate, writeLocal } from "./worldtype.mjs";
 
 const LOG_LINES = 3000;
+// New worlds start from the upstream project's main, not the fork's (which can lag behind it).
+const NEW_WORLD_REPO = "https://github.com/RSPSApp/tsps";
+const NEW_WORLD_REF = "refs/remotes/rspsapp/main";
 const POLL_MS = 3000;
 const GIT_MS = 30_000;
 const STOP_GRACE_MS = 60_000;
@@ -721,12 +724,23 @@ export class Fleet extends EventEmitter {
     if (!(await validBranchName(branch))) throw Object.assign(new Error("Not a valid branch name."), { status: 400 });
     if (base && !/^[A-Za-z0-9._\/-]+$/.test(base)) throw Object.assign(new Error("Not a valid base ref."), { status: 400 });
     if (!/^(members|f2p|hardcore|league:\d+)$/.test(type)) throw Object.assign(new Error("Unknown world type."), { status: 400 });
-    const args = [join(this.repo, "scripts", "wt"), "new", branch, ...(base ? [base] : [])];
+    const fromUpstream = !base;
     // Where `wt new` puts it: beside the main checkout, named after it and the branch.
     const dir = join(dirname(this.repo), `${basename(this.repo)}-${branch.replace(/\//g, "-")}`);
     return this.task({ kind: "create", title: "Create world", detail: branch, type, key: `create:${branch}` }, async (onLine, job) => {
+      // `wt new` reuses a branch that already exists, so only a brand-new one starts from RSPSApp/tsps.
+      const exists = await stream("git", ["-C", this.repo, "show-ref", "-q", "--verify", `refs/heads/${branch}`], { onLine: () => {} }) === 0;
+      if (fromUpstream && !exists) {
+        onLine(`Fetching the latest main from ${NEW_WORLD_REPO}`);
+        const fetched = await stream("git", ["-C", this.repo, "fetch", "-q", NEW_WORLD_REPO, `+main:${NEW_WORLD_REF}`], { onLine });
+        if (fetched !== 0) return fetched;
+      }
+      const args = [join(this.repo, "scripts", "wt"), "new", branch, ...(base ? [base] : exists ? [] : [NEW_WORLD_REF])];
       const code = await stream(this.bash, args, { cwd: this.repo, env: childEnv(process.env, this.repo), onLine });
       if (code !== 0) return code;
+      // Track the fork's main, as a world made from origin/main does, so Update keeps working
+      // (it syncs the fork with RSPSApp/tsps first).
+      if (fromUpstream && !exists) await stream("git", ["-C", dir, "branch", "--set-upstream-to=origin/main"], { onLine });
       await this.refresh();
       const rec = [...this.servers.values()].find((r) => samePath(r.dir, dir));
       const n = rec ? this.number(rec) : null;

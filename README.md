@@ -54,7 +54,7 @@ FreeToPlay plugin is off, as in the server), and from the live world once it's o
   pulls. This needs the GitHub CLI signed in.
 - **New world** asks only for a name (made into a branch name as you type: spaces become dashes,
   characters git refuses are dropped), previews the world number, branch and folder it will get, and
-  keeps the starting point under Advanced (default `origin/main`). Its World type picker offers the main
+  keeps the starting point under Advanced (default: the latest `main` of https://github.com/RSPSApp/tsps). Its World type picker offers the main
   checkout's types; the type is written into the new world's `world.local.json` right after
   `wt new`, so its first launch is already that type. It runs `scripts/wt new <branch>
   [base]` through Git Bash and opens the new world when it appears.

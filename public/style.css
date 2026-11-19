@@ -162,9 +162,11 @@ button.stone.icon svg { width: 18px; height: 18px; }
 /* The title row: Reorder on the left, New world (+) on the right, as small square icon buttons. Each has
    its own column, so hiding them while reordering leaves the title where it is. Reordering rows get a grip. */
 .switcher-title { display: grid; grid-template-columns: 26px minmax(0, 1fr) 26px; align-items: start; }
-.switcher-title #reorder { grid-column: 1; }
-.switcher-title .rs-title { grid-column: 2; }
-.switcher-title #new { grid-column: 3; color: var(--rs-yellow); }
+.switcher-title #reorder { grid-column: 1; grid-row: 1; }
+.switcher-title .rs-title { grid-column: 2; grid-row: 1; }
+.switcher-title #new { grid-column: 3; grid-row: 1; color: var(--rs-yellow); }
+.switcher-title #reorder-cancel { grid-column: 1; grid-row: 1; color: #ff9b94; }
+.switcher-title #reorder-save { grid-column: 3; grid-row: 1; color: #3ee03e; }
 /* While reordering, the Players column holds the drag grips, so its heading goes (the column stays). */
 .reordering .switcher-head > :nth-child(3) { visibility: hidden; }
 .addr-btn.icon-btn { display: grid; place-items: center; width: 26px; min-width: 0; padding: 0; }
@@ -174,7 +176,6 @@ button.stone.icon svg { width: 18px; height: 18px; }
 .world-row.is-dragging { cursor: grabbing; background: rgba(255, 152, 31, .16); border-color: rgba(255, 152, 31, .55); }
 .world-row .grip { display: flex; color: #9a8f7c; }
 .world-row .grip svg { width: 18px; height: 18px; }
-.switcher-foot .reorder-actions { flex: 1; display: flex; justify-content: center; gap: 8px; }
 
 /* Recent jobs: drawn with the dialogs' pieces. A centred orange title, each job as the dialogs'
    preview card (dark inset, thin orange edge) with its icon inline like a world icon, small stone

@@ -247,6 +247,8 @@ function moveTo(id, to) {
 function renderSwitcher() {
   $("#reorder").hidden = !!reorder;
   $("#new").hidden = !!reorder;
+  $("#reorder-cancel").hidden = !reorder;
+  $("#reorder-save").hidden = !reorder;
   $("#switcher").classList.toggle("reordering", !!reorder);
   $("#reorder").disabled = state.servers.length < 2;
   if (reorder) {
@@ -255,7 +257,7 @@ function renderSwitcher() {
     reorder = [...reorder.filter((id) => ids.has(id)), ...state.servers.map((s) => s.id).filter((id) => !reorder.includes(id))];
     const byId = new Map(state.servers.map((s) => [s.id, s]));
     setHtml($("#world-list"), reorder.map((id, i) => editRow(byId.get(id), i, reorder.length)).join(""));
-    setHtml($("#total"), `<div class="reorder-actions"><button type="button" class="stone gold" data-reorder="save">Save</button><button type="button" class="stone" data-reorder="cancel">Cancel</button></div>`);
+    renderTotal();
     return renderJobs();
   }
   setHtml($("#world-list"), state.servers.map((s) => {
@@ -271,11 +273,14 @@ function renderSwitcher() {
     </button>`;
   }).join("") + creatingRows() || `<p class="rs" style="margin:6px;color:#e8dcc0">No worlds yet. Create one.</p>`);
 
+  renderTotal();
+  renderJobs();
+}
+
+function renderTotal() {
   const online = state.servers.filter((s) => s.status === "online");
   const players = online.reduce((n, s) => n + (s.players ?? 0), 0);
   setHtml($("#total"), `<span><b>${players}</b> ${players === 1 ? "player" : "players"} online</span><span><b>${online.length}</b> of ${state.servers.length} worlds up</span>`);
-
-  renderJobs();
 }
 
 /** Edit's Save: saves the order, if it changed, and leaves Edit mode. */
@@ -1013,11 +1018,8 @@ $("#world-list").addEventListener("keydown", (e) => {
   $(`#world-list [data-id="${CSS.escape(id)}"]`).focus(); // the redraw replaced the row
 });
 $("#reorder").onclick = () => { reorder = state.servers.map((s) => s.id); renderSwitcher(); $("#world-list .world-row")?.focus(); };
-$("#total").addEventListener("click", (e) => {
-  const act = e.target.closest("button[data-reorder]")?.dataset.reorder;
-  if (act === "cancel") { reorder = null; renderSwitcher(); $("#reorder").focus(); }
-  if (act === "save") saveOrder();
-});
+$("#reorder-cancel").onclick = () => { reorder = null; renderSwitcher(); $("#reorder").focus(); };
+$("#reorder-save").onclick = () => saveOrder();
 $("#world").addEventListener("click", (e) => {
   if (!selected) return;
   if (e.target.closest("button[data-remove]")) return openRemove();
