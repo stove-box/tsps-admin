@@ -22,6 +22,9 @@
   --rs-bold: "RuneScape Bold 12", "IBM Plex Sans", system-ui, sans-serif;
   --mono: ui-monospace, SFMono-Regular, "Cascadia Code", Consolas, monospace;
   --bar-height: 60px;
+  /* One inner padding for the world header and the tabs window, so their contents (and the console's
+     text) start on the same line down the page; 16px on narrow screens. */
+  --pad: 18px;
   color-scheme: dark;
 }
 
@@ -104,7 +107,7 @@ button.stone.icon svg { width: 18px; height: 18px; }
 
 /* ---- layout ---- */
 .layout { display: grid; grid-template-columns: 320px minmax(0, 1fr); grid-template-rows: var(--bar-height) minmax(0, 1fr); height: 100vh; height: 100dvh; }
-.top-bar { grid-column: 1 / -1; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 0 22px; background: var(--bar); border-bottom: 1px solid var(--rule); }
+.top-bar { grid-column: 1 / -1; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 0 14px; background: var(--bar); border-bottom: 1px solid var(--rule); }
 .bar-left { display: flex; align-items: center; gap: 10px; min-width: 0; }
 .logo { width: 30px; height: 30px; flex: none; }
 .title { font-size: 15px; color: #c4bfb2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -118,7 +121,7 @@ button.stone.icon svg { width: 18px; height: 18px; }
 .menu-toggle svg { width: 18px; height: 18px; }
 
 /* ---- World Switcher ---- */
-.switcher { padding: 18px 14px; background: var(--bar); border-right: 1px solid var(--rule); overflow-x: hidden; overflow-y: auto; display: flex; flex-direction: column; gap: 18px; min-width: 0; }
+.switcher { padding: 20px 14px; background: var(--bar); border-right: 1px solid var(--rule); overflow-x: hidden; overflow-y: auto; display: flex; flex-direction: column; gap: 18px; min-width: 0; }
 /* The sidebar and the main column still scroll on short windows, without showing a scrollbar. */
 .switcher, .workspace { scrollbar-width: none; }
 .switcher::-webkit-scrollbar, .workspace::-webkit-scrollbar { display: none; }
@@ -194,17 +197,18 @@ button.stone.icon svg { width: 18px; height: 18px; }
 .job.j-failed .job-icon { color: #ff8070; }
 .job-body { min-width: 0; display: grid; gap: 2px; }
 /* One sentence per job, coloured by how it's going, and when under it. */
-.job-title { font: 16px/1.25 var(--rs-bold); color: var(--rs-orange); text-shadow: 1px 1px 0 #000; overflow-wrap: anywhere; }
+.job-title { font: 16px/1.25 var(--rs); color: var(--rs-orange); text-shadow: 1px 1px 0 #000; overflow-wrap: break-word; }
+.job-world { font-family: var(--rs-bold); font-weight: normal; color: var(--rs-white); white-space: nowrap; }
 .job.j-done .job-title { color: #3ee03e; }
 .job.j-failed .job-title { color: #ff6050; }
-.job-when { font: 16px/1.2 var(--rs); color: #a79a80; text-shadow: 1px 1px 0 #000; }
+.job-when { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 22px; font: 16px/1.2 var(--rs); color: #a79a80; text-shadow: 1px 1px 0 #000; }
 @media (prefers-reduced-motion: reduce) { .job.j-running .job-icon { animation: none; } }
 .menu-backdrop { display: none; }
 
 /* ---- the selected world ---- */
-.workspace { display: flex; flex-direction: column; gap: 18px; min-width: 0; min-height: 0; padding: 20px 28px 22px; overflow: auto; }
-.world { display: grid; gap: 16px; }
-.hero { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 18px; align-items: center; padding: 18px 22px; }
+.workspace { display: flex; flex-direction: column; gap: 18px; min-width: 0; min-height: 0; padding: 20px 28px; overflow: auto; }
+.world { display: grid; gap: 18px; }
+.hero { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 18px; align-items: center; padding: var(--pad); }
 .hero-name { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 .hero-name h1 { font: 32px/1.05 var(--rs-bold); color: var(--rs-orange); text-shadow: 2px 2px 0 #000; }
 .hero .branch { color: var(--rs-yellow); }
@@ -265,7 +269,7 @@ button.stone.icon svg { width: 18px; height: 18px; }
 .menu-opt[aria-selected="true"]::after { content: ""; margin-left: auto; width: 5px; height: 10px; border: solid var(--rs-green); border-width: 0 3px 3px 0; transform: rotate(45deg) translate(-2px, -2px); filter: drop-shadow(1px 1px 0 #000); }
 .menu-opt .star.sprite { flex: none; }
 
-.panel { padding: 12px 14px 14px; min-width: 0; }
+.panel { padding: 16px var(--pad) var(--pad); min-width: 0; }
 .panel .rs-title { margin-bottom: 8px; }
 .kv { display: grid; grid-template-columns: 90px minmax(0, 1fr); gap: 6px 14px; margin: 0; font: 16px/1.25 var(--rs); text-shadow: 1px 1px 0 #000; }
 .kv dt { color: var(--rs-orange); }
@@ -291,7 +295,9 @@ button.stone.icon svg { width: 18px; height: 18px; }
   font: 13px/20px var(--mono);
 }
 /* time | who | message; a long message wraps under itself, not under the time */
-.chat-body .ln { display: grid; grid-template-columns: 66px 52px minmax(0, 1fr); column-gap: 10px; padding: 1px 8px; border-bottom: 1px solid rgba(0, 0, 0, .25); }
+.chat-body .ln { display: grid; grid-template-columns: 66px 52px minmax(0, 1fr); column-gap: 10px; padding: 1px calc(var(--pad) - 9px); border-bottom: 1px solid rgba(0, 0, 0, .25); }
+/* Rows off screen skip layout and paint: a 2000-line console then costs about what's visible. */
+.chat-body .ln { content-visibility: auto; contain-intrinsic-size: auto 21px; }
 .chat-body .ln:hover { background: rgba(255, 255, 255, .04); }
 .chat-body .time { color: #8f826b; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .chat-body .who { white-space: nowrap; }
@@ -373,7 +379,8 @@ button.stone.icon svg { width: 18px; height: 18px; }
   .switcher.open { display: flex; }
   .menu-backdrop:not([hidden]) { display: block; position: fixed; inset: var(--bar-height) 0 0 0; z-index: 11; background: rgba(0, 0, 0, .5); border: 0; }
   .workspace { padding: 16px; }
-  .hero { grid-template-columns: minmax(0, 1fr); padding: 16px; }
+  :root { --pad: 16px; }
+  .hero { grid-template-columns: minmax(0, 1fr); }
   .hero-name h1 { font-size: 26px; }
   .chat-tabs input[type="search"] { width: 120px; }
 }
@@ -442,7 +449,7 @@ button.stone.icon svg { width: 18px; height: 18px; }
 /* A world summary in a dialog (Restart the panel, Remove world): one row per world. */
 .restart-list { display: grid; grid-template-columns: 16px auto minmax(0, 1fr) auto; align-items: center; gap: 6px 10px; width: 100%; margin: 0; padding: 0; list-style: none; font: 16px/1.2 var(--rs); text-shadow: 1px 1px 0 #000; }
 .restart-list li { display: contents; }
-.restart-list .rl-n { color: var(--rs-white); }
+.restart-list .rl-n { font-family: var(--rs-bold); color: var(--rs-white); }
 .restart-list .rl-t { color: var(--rs-yellow); }
 .restart-list .rl-p { color: #c9b9a0; text-align: right; }
 .type-change { display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: 6px 12px; }
@@ -472,10 +479,12 @@ button.stone.icon svg { width: 18px; height: 18px; }
 .tabpanels > [data-off] { visibility: hidden; }
 /* Update & options: two columns split by the stone divider, labels and values side by side, and each
    column's button (Update, Remove world) at its foot so they line up. */
-.tab-cols { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+/* The right column is the world header's button column (330px + its 18px gap), so Game update starts
+   right under Play and the divider runs down from the gap beside it. */
+.tab-cols { display: grid; grid-template-columns: minmax(0, 1fr) 348px; }
 .tab-col { display: flex; flex-direction: column; min-width: 0; }
-.tab-col:first-child { padding-right: 24px; border-right: 1px solid rgba(0, 0, 0, .45); box-shadow: 1px 0 0 var(--stone-hi); }
-.tab-col:last-child { padding-left: 24px; }
+.tab-col:first-child { padding-right: 18px; border-right: 1px solid rgba(0, 0, 0, .45); box-shadow: 1px 0 0 var(--stone-hi); }
+.tab-col:last-child { padding-left: 17px; }
 .tab-cols .rs-title { margin-bottom: 10px; }
 @media (max-width: 920px) {
   .tab-cols { grid-template-columns: minmax(0, 1fr); gap: 18px; }
@@ -485,8 +494,7 @@ button.stone.icon svg { width: 18px; height: 18px; }
 .panel .options { margin-bottom: 14px; }
 
 /* Recent jobs: Details on the title line (third column), its output in a dialog */
-.job { grid-template-columns: 16px minmax(0, 1fr) auto; }
-.job-more { align-self: start; min-width: 0; height: 22px; padding: 0 7px; }
+.job-more { min-width: 0; height: 22px; padding: 0 7px; }
 .job-dialog { width: min(620px, calc(100vw - 32px)); }
 .job-dialog form { gap: 10px; }
 .job-summary { font: 16px/1.3 var(--rs); text-shadow: 1px 1px 0 #000; color: #e8dcc0; }

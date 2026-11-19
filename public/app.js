@@ -124,12 +124,14 @@ function askConfirm({ title, text = "", yes = "Yes", no = "No", danger = false, 
 /** What the Shut down button asks, worded for this world as it is now. */
 function shutdownQuestion(s) {
   const n = s.world.number;
-  const players = s.status === "online" && s.players ? `The ${s.players} player${s.players === 1 ? "" : "s"} online ${s.players === 1 ? "is" : "are"} saved first,` : "Anyone online is saved first,";
+  const on = s.status === "online" ? s.players ?? 0 : 0;
   return {
     title: `Shut down World ${n}?`,
-    text: `${players} then the world goes offline.${s.external ? " It was launched from a terminal, so its processes there are ended too." : ""}`,
-    yes: "Yes, shut down",
-    no: "No",
+    card: `<ul class="restart-list"><li>${worldIcon(s.world)}<span class="rl-n">World ${n}</span>
+      <span class="rl-t">${esc(shortType(s.world))}</span><span class="rl-p">${on} online</span></li></ul>`,
+    note: on ? `${on} player${on === 1 ? " is" : "s are"} saved first.` : "The world goes offline.",
+    yes: "Shut down",
+    no: "Cancel",
     danger: true,
   };
 }
@@ -336,15 +338,15 @@ function renderJobs() {
   const jobs = (state.tasks ?? []).filter((t) => t.state !== "done" || Date.now() - (t.endedAt ?? t.at) < 10_000).slice(0, 6).reverse();
   $("#jobs-wrap").hidden = jobs.length === 0;
   $("#jobs-clear").hidden = !jobs.some((t) => t.state !== "running");
-  // Details sits on the card's title line and opens the output in a dialog, so the list never grows.
+  // Details sits on the time line, so the sentence gets the card's full width; it opens the output in a dialog.
   setHtml($("#jobs"), jobs.map((t) => `
     <article class="job j-${esc(t.state)} k-${esc(t.kind ?? "job")}" data-id="${esc(t.id)}">
       <span class="job-icon">${JOB_ICON[t.kind] ?? JOB_ICON.fetch}</span>
       <div class="job-body">
-        <div class="job-title">${esc(jobHeadline(t))}</div>
-        <div class="job-when">${t.state === "running" ? clock(Date.now() - t.at) : ago(t.endedAt ?? t.at)}</div>
+        <div class="job-title">${esc(jobHeadline(t)).replace(/World \d+/, '<b class="job-world">$&</b>')}</div>
+        <div class="job-when"><span>${t.state === "running" ? clock(Date.now() - t.at) : ago(t.endedAt ?? t.at)}</span>
+          ${t.lines.length ? `<button type="button" class="addr-btn job-more" data-job="${esc(t.id)}" aria-label="Details of ${esc(t.title ?? "this job")}">Details</button>` : ""}</div>
       </div>
-      ${t.lines.length ? `<button type="button" class="addr-btn job-more" data-job="${esc(t.id)}" aria-label="Details of ${esc(t.title ?? "this job")}">Details</button>` : ""}
     </article>`).join(""));
   if (jobShown) showJob(jobShown);
 }
@@ -639,19 +641,17 @@ document.addEventListener("scroll", () => positionMenu(), true);
 /** What happens when a world setting changes, for World type and XP rate. */
 function changeNote(s) {
   return s.status !== "online" ? "Applies at the next launch."
-    : s.players ? "Restarts after a 60-second countdown." : "Restarts the server.";
+    : s.players ? "Restarts after a 60-second countdown." : "Restart required.";
 }
 
 async function changeWorldType(type) {
   const s = current();
   if (!s) return;
   const label = s.world.types.find((t) => t.id === type)?.label ?? type;
-  const n = s.world.number;
   // Laid out like New world: title, one line, a card showing the change with its world icons, a note.
   const to = { type, typeLabel: label, members: type !== "f2p" };
   const ok = await askConfirm({
     title: "Change the world type?",
-    text: `World ${n} becomes ${label}.`,
     card: `
       <div class="type-change">
         <span class="from">${worldIcon(s.world)}<span>${esc(typeName(s.world))}</span></span>
@@ -862,39 +862,71 @@ const isError = (t) => /\b(error|exception|failed|fatal|crash(ed)?)\b/i.test(t);
 const isWarn = (t) => /\bwarn(ing)?\b/i.test(t);
 const WHO = { server: "Server", client: "Client", admin: "Panel" };
 
+const CHAT_ROWS = 2000;
+let chatShown = null; // what the console holds: { id, key (filter + search), seen (log lines read) }
+
+/** Whether log line `p` shows under the current tab and search `q`. */
+function chatKeeps(p, line, q) {
+  if (!p.text.trim()) return false; // the client's build prints spacer lines; they only add gaps
+  if (chatFilter === "error" ? !isError(p.text) : chatFilter !== "all" && p.who !== chatFilter) return false;
+  return !q || line.toLowerCase().includes(q);
+}
+
+// Three columns per line: a dim time, who said it, and the message, whose leading "[cache]"-style
+// tags are dimmed so the words after them stand out. Long messages wrap under the message only.
+function chatRow(p, t) {
+  const kind = p.who === "admin" ? "admin" : isError(p.text) ? "err" : isWarn(p.text) ? "warn" : "";
+  const text = esc(p.text.trimEnd()).replace(/^((?:\[[^\]\n]{1,40}\]\s*)+)/, '<span class="tag">$1</span>');
+  return `<div class="ln ${kind}"><span class="time">${lineTime(t)}</span>`
+    + `<span class="who ${p.who || "other"}">${WHO[p.who] ?? ""}</span><span class="msg">${text}</span></div>`;
+}
+
+/** Redraws the whole console: on a world, tab or search change (new lines go through appendChat). */
 function renderChat() {
   const body = $("#chat-body");
+  chatShown = null;
   if (!selected) { body.innerHTML = ""; return; }
   const all = logLines.get(selected);
   if (!all) { body.innerHTML = `<span class="empty">Loading...</span>`; return; }
   const q = $("#chat-search").value.toLowerCase();
-  const lines = [];
-  for (const e of all.slice(-3000)) {
+  const rows = [];
+  for (const e of all) {
     const p = parse(e.line);
-    if (!p.text.trim()) continue; // the client's build prints spacer lines; they only add gaps
-    if (chatFilter === "error" ? !isError(p.text) : chatFilter !== "all" && p.who !== chatFilter) continue;
-    if (q && !e.line.toLowerCase().includes(q)) continue;
-    lines.push({ ...p, t: e.t });
+    if (chatKeeps(p, e.line, q)) rows.push(chatRow(p, e.t));
   }
   const s = current();
-  if (lines.length === 0) {
+  if (rows.length === 0) {
     body.innerHTML = `<span class="empty">${q || chatFilter !== "all" ? "Nothing matches." : s?.external
       ? "This world was launched from a terminal; its console output is there."
       : "Welcome to the console. Launch the world to see its messages here."}</span>`;
     return;
   }
-  // Three columns per line: a dim time, who said it, and the message, whose leading "[cache]"-style
-  // tags are dimmed so the words after them stand out. Long messages wrap under the message only.
-  body.innerHTML = lines.slice(-2000).map((p) => {
-    const kind = p.who === "admin" ? "admin" : isError(p.text) ? "err" : isWarn(p.text) ? "warn" : "";
-    const text = esc(p.text.trimEnd()).replace(/^((?:\[[^\]\n]{1,40}\]\s*)+)/, '<span class="tag">$1</span>');
-    return `<div class="ln ${kind}"><span class="time">${lineTime(p.t)}</span>`
-      + `<span class="who ${p.who || "other"}">${WHO[p.who] ?? ""}</span><span class="msg">${text}</span></div>`;
-  }).join("");
+  body.innerHTML = rows.slice(-CHAT_ROWS).join("");
+  chatShown = { id: selected, key: `${chatFilter}|${q}`, seen: all.length };
   if ($("#chat-follow").checked) body.scrollTop = body.scrollHeight;
 }
 
-const lineTime = (t) => (t ? new Date(t).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false }) : "");
+/** New log lines: adds just their rows (dropping the oldest past CHAT_ROWS) instead of redrawing them all. */
+function appendChat() {
+  const body = $("#chat-body");
+  const all = logLines.get(selected);
+  const q = $("#chat-search").value.toLowerCase();
+  if (!all || chatShown?.id !== selected || chatShown.key !== `${chatFilter}|${q}` || chatShown.seen < 0) return renderChat();
+  const rows = [];
+  for (const e of all.slice(chatShown.seen)) {
+    const p = parse(e.line);
+    if (chatKeeps(p, e.line, q)) rows.push(chatRow(p, e.t));
+  }
+  chatShown.seen = all.length;
+  if (!rows.length) return;
+  body.insertAdjacentHTML("beforeend", rows.join(""));
+  while (body.childElementCount > CHAT_ROWS) body.firstElementChild.remove();
+  if ($("#chat-follow").checked) body.scrollTop = body.scrollHeight;
+}
+
+// One formatter for every row: toLocaleTimeString builds a new one per call, which was most of a redraw.
+const TIME = new Intl.DateTimeFormat([], { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false });
+const lineTime = (t) => (t ? TIME.format(t) : "");
 async function loadLogs(id) {
   const res = await fetch(`/api/logs?id=${encodeURIComponent(id)}`);
   if (res.ok) logLines.set(id, (await res.json()).lines);
@@ -1190,8 +1222,12 @@ function connect() {
     const arr = logLines.get(id);
     if (!arr) return; // fetched in full when first selected
     arr.push({ t, line });
-    if (arr.length > 3000) arr.splice(0, arr.length - 3000);
-    if (id === selected && !chatQueued) { chatQueued = true; requestAnimationFrame(() => { chatQueued = false; renderChat(); }); }
+    if (arr.length > 3000) {
+      const cut = arr.length - 3000;
+      arr.splice(0, cut);
+      if (chatShown?.id === id) chatShown.seen -= cut; // the console's place in the list moves with it
+    }
+    if (id === selected && !chatQueued) { chatQueued = true; requestAnimationFrame(() => { chatQueued = false; appendChat(); }); }
   });
 }
 connect();

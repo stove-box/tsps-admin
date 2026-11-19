@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { spawn } from "node:child_process";
 import crypto from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, openSync, readFileSync, writeFileSync } from "node:fs";
 import http from "node:http";
 import { dirname, extname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -205,14 +205,13 @@ server.on("error", (err) => {
   process.exit(1);
 });
 
-/** A fresh panel in its own window, as the Startup shortcut opens it (minimized). */
+/**
+ * A fresh panel with no window: its console output goes to data/panel.log (rewritten each restart),
+ * its worlds' logs to data/logs as always.
+ */
 function relaunch() {
-  if (process.platform === "win32") {
-    spawn("cmd.exe", ["/d", "/c", 'start "tsps admin" /min start-panel.cmd'], { cwd: ROOT, detached: true, stdio: "ignore", windowsVerbatimArguments: true }).unref();
-  } else {
-    // shortcut: no terminal to print to, so the new panel's console output is dropped; its world logs still go to data/logs.
-    spawn(process.execPath, process.argv.slice(1), { cwd: ROOT, detached: true, stdio: "ignore" }).unref();
-  }
+  const log = openSync(join(config.dataDir, "panel.log"), "w");
+  spawn(process.execPath, process.argv.slice(1), { cwd: ROOT, detached: true, windowsHide: true, stdio: ["ignore", log, log] }).unref();
 }
 
 let quitting = false;
