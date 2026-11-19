@@ -85,7 +85,8 @@ const TYPES = {
 const clients = new Set();
 function broadcast(event, data) {
   const msg = `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
-  for (const res of clients) res.write(msg);
+  // Writing to an ended response throws and kills the panel; skip it.
+  for (const res of clients) if (!res.writableEnded) res.write(msg);
 }
 let stateQueued = false;
 fleet.on("state", () => {
@@ -220,7 +221,9 @@ async function quit({ restart = false } = {}) {
   console.info(restart ? "[admin] restarting the panel: stopping the servers it started, to start them again..."
     : "[admin] stopping the servers this panel started (Ctrl+C again to force)...");
   server.close();
+  // Clear the list too: a broadcast to an ended response throws, which would kill the panel mid-shutdown.
   for (const res of clients) res.end();
+  clients.clear();
   await fleet.shutdown({ resume: restart });
   if (restart) relaunch();
   process.exit(0);
