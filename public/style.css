@@ -105,7 +105,7 @@ button.stone.icon svg { width: 18px; height: 18px; }
 /* ---- layout ---- */
 .layout { display: grid; grid-template-columns: 320px minmax(0, 1fr); grid-template-rows: var(--bar-height) minmax(0, 1fr); height: 100vh; height: 100dvh; }
 .top-bar { grid-column: 1 / -1; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 0 22px; background: var(--bar); border-bottom: 1px solid var(--rule); }
-.bar-left, .bar-right { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.bar-left { display: flex; align-items: center; gap: 10px; min-width: 0; }
 .logo { width: 30px; height: 30px; flex: none; }
 .title { font-size: 15px; color: #c4bfb2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .title strong { font: 20px/1 var(--rs-bold); color: var(--gold); text-shadow: 1px 1px 0 #000; letter-spacing: .02em; vertical-align: -1px; }
@@ -153,6 +153,8 @@ button.stone.icon svg { width: 18px; height: 18px; }
 .star.sprite.league { filter: hue-rotate(75deg) saturate(1.5) brightness(1.05) drop-shadow(1px 1px 0 #000); }
 /* One height in both modes (Save/Cancel's), so Edit doesn't make the window grow: players left, worlds right. */
 .switcher-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; height: 44px; padding: 8px 8px 0; color: #c9b9a0; }
+/* The panel's Restart and Update (git fetch) sit side by side at the foot of the sidebar. */
+.sidebar-actions { margin-top: auto; display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .switcher-foot b { color: var(--rs-white); font-weight: normal; }
 /* The title row: Reorder on the left, New world (+) on the right, as small square icon buttons. Each has
    its own column, so hiding them while reordering leaves the title where it is. Reordering rows get a grip. */
@@ -174,7 +176,9 @@ button.stone.icon svg { width: 18px; height: 18px; }
 /* Recent jobs: drawn with the dialogs' pieces. A centred orange title, each job as the dialogs'
    preview card (dark inset, thin orange edge) with its icon inline like a world icon, small stone
    buttons for Clear and Details, and the output in the dialogs' dark list box. */
-.jobs-panel { padding: 10px 8px 8px; min-width: 0; }
+.jobs-panel { padding: 10px 8px 8px; min-width: 0; margin-top: auto; }
+/* With jobs showing, they take the free space above them and sit right on Restart / Update. */
+#jobs-wrap:not([hidden]) ~ .sidebar-actions { margin-top: 0; }
 .jobs-head { position: relative; padding: 2px 0 10px; }
 .jobs-head .rs-title { text-align: center; }
 .jobs-head .addr-btn { position: absolute; right: 2px; top: -1px; min-width: 0; }
@@ -189,15 +193,11 @@ button.stone.icon svg { width: 18px; height: 18px; }
 .job.j-running .job-icon { color: var(--rs-orange); animation: blink 1.1s steps(2) infinite; }
 .job.j-failed .job-icon { color: #ff8070; }
 .job-body { min-width: 0; display: grid; gap: 2px; }
-.job-title { font: 16px/1.2 var(--rs-bold); color: var(--rs-orange); text-shadow: 1px 1px 0 #000; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.job-detail { font: 16px/1.2 var(--rs); color: #c9b9a0; }
-.job-status { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 8px; min-width: 0; font: 16px/1.3 var(--rs); color: #e8dcc0; text-shadow: 1px 1px 0 #000; }
-.job-state.done { color: #3ee03e; }
-.job-state.running { color: var(--rs-orange); }
-.job-state.failed { color: #ff6050; }
-.job-msg { min-width: 0; flex: 1 1 100%; color: #e8dcc0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.job.j-failed .job-msg { white-space: normal; overflow-wrap: anywhere; }
-.job-when { color: #a79a80; }
+/* One sentence per job, coloured by how it's going, and when under it. */
+.job-title { font: 16px/1.25 var(--rs-bold); color: var(--rs-orange); text-shadow: 1px 1px 0 #000; overflow-wrap: anywhere; }
+.job.j-done .job-title { color: #3ee03e; }
+.job.j-failed .job-title { color: #ff6050; }
+.job-when { font: 16px/1.2 var(--rs); color: #a79a80; text-shadow: 1px 1px 0 #000; }
 @media (prefers-reduced-motion: reduce) { .job.j-running .job-icon { animation: none; } }
 .menu-backdrop { display: none; }
 
@@ -285,28 +285,27 @@ button.stone.icon svg { width: 18px; height: 18px; }
 .chatbox { flex: 1 1 0; min-height: 220px; display: flex; flex-direction: column; border: 2px solid var(--stone-edge); border-radius: 3px; box-shadow: inset 0 0 0 1px var(--stone-hi), 0 6px 18px var(--shadow); overflow: hidden; background: var(--stone); }
 .chat-body {
   flex: 1; overflow: auto; margin: 4px 4px 0; padding: 6px 4px;
-  /* a softer, warmer parchment than before, so a screenful of text doesn't glare */
-  background: linear-gradient(rgba(255, 250, 235, .18), rgba(120, 95, 50, .06)), #cdbf9c;
-  border: 1px solid #6e6046; box-shadow: inset 0 0 22px rgba(90, 65, 25, .28);
-  color: #2b2418; text-shadow: none; overflow-wrap: anywhere;
-  font: 16px/22px var(--rs);
+  /* The panel's dark stone inset (like a job's Details), in a monospace font so logs and code line up. */
+  background: var(--stone-dark); border: 1px solid var(--stone-edge); box-shadow: inset 1px 1px 0 rgba(0, 0, 0, .6);
+  color: #e8dcc0; text-shadow: none; overflow-wrap: anywhere;
+  font: 13px/20px var(--mono);
 }
 /* time | who | message; a long message wraps under itself, not under the time */
-.chat-body .ln { display: grid; grid-template-columns: 62px 52px minmax(0, 1fr); column-gap: 10px; padding: 1px 8px; border-bottom: 1px solid rgba(110, 90, 55, .12); }
-.chat-body .ln:hover { background: rgba(255, 250, 235, .22); }
-.chat-body .time { color: #8a7a5c; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.chat-body .ln { display: grid; grid-template-columns: 66px 52px minmax(0, 1fr); column-gap: 10px; padding: 1px 8px; border-bottom: 1px solid rgba(0, 0, 0, .25); }
+.chat-body .ln:hover { background: rgba(255, 255, 255, .04); }
+.chat-body .time { color: #8f826b; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .chat-body .who { white-space: nowrap; }
-.chat-body .who.server { color: #2d4a7a; }
-.chat-body .who.client { color: #6a3d6a; }
-.chat-body .who.admin { color: #2a6058; }
+.chat-body .who.server { color: #8fb4e8; }
+.chat-body .who.client { color: #d6a3d6; }
+.chat-body .who.admin { color: var(--rs-orange); }
 .chat-body .msg { white-space: pre-wrap; }
-.chat-body .tag { color: #8a7a5c; }
-.chat-body .ln.admin .msg { color: #2a6058; }
-.chat-body .ln.warn { background: rgba(200, 140, 30, .14); }
-.chat-body .ln.warn .msg { color: #6e4300; }
-.chat-body .ln.err { background: rgba(180, 40, 30, .12); box-shadow: inset 3px 0 0 rgba(160, 30, 20, .55); }
-.chat-body .ln.err .msg { color: #8e1a12; }
-.chat-body .empty { display: block; padding: 4px 8px; color: #6e6046; }
+.chat-body .tag { color: #a79a80; }
+.chat-body .ln.admin .msg { color: var(--rs-yellow); }
+.chat-body .ln.warn { background: rgba(255, 152, 31, .08); }
+.chat-body .ln.warn .msg { color: #ffc56b; }
+.chat-body .ln.err { background: rgba(255, 70, 50, .10); box-shadow: inset 3px 0 0 #b8382c; }
+.chat-body .ln.err .msg { color: #ff9b94; }
+.chat-body .empty { display: block; padding: 4px 8px; color: #a79a80; }
 /* The console keeps its own scrollbar (it's how you read back), drawn as a slim stone bar. */
 .chat-body, .job pre { scrollbar-width: thin; scrollbar-color: #6e6046 transparent; }
 .chat-body::-webkit-scrollbar, .job pre::-webkit-scrollbar { width: 8px; height: 8px; }
@@ -368,7 +367,7 @@ button.stone.icon svg { width: 18px; height: 18px; }
   .layout { grid-template-columns: minmax(0, 1fr); }
   .top-bar { padding: 0 16px; }
   .menu-toggle { display: inline-flex; }
-  .conn, #fetch .label { display: none; }
+  .conn { display: none; }
   #fetch { width: 38px; padding: 0; }
   .switcher { display: none; position: fixed; z-index: 12; inset: var(--bar-height) auto 0 0; width: min(330px, calc(100vw - 40px)); box-shadow: 12px 0 30px var(--shadow); }
   .switcher.open { display: flex; }
@@ -440,6 +439,12 @@ button.stone.icon svg { width: 18px; height: 18px; }
 
 /* World type change: New world's preview card, showing from -> to with the world icons */
 .confirm-card { justify-content: center; text-align: left; }
+/* A world summary in a dialog (Restart the panel, Remove world): one row per world. */
+.restart-list { display: grid; grid-template-columns: 16px auto minmax(0, 1fr) auto; align-items: center; gap: 6px 10px; width: 100%; margin: 0; padding: 0; list-style: none; font: 16px/1.2 var(--rs); text-shadow: 1px 1px 0 #000; }
+.restart-list li { display: contents; }
+.restart-list .rl-n { color: var(--rs-white); }
+.restart-list .rl-t { color: var(--rs-yellow); }
+.restart-list .rl-p { color: #c9b9a0; text-align: right; }
 .type-change { display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: 6px 12px; }
 .type-change .from, .type-change .to { display: inline-flex; align-items: center; gap: 8px; font: 16px/1.2 var(--rs); text-shadow: 1px 1px 0 #000; }
 .type-change .from { color: #c9b9a0; }

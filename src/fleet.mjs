@@ -686,7 +686,7 @@ export class Fleet extends EventEmitter {
       for (const r of this.servers.values()) { r.gitAt = 0; r.forkAt = 0; }
       // Ref lines look like " * [new branch]  x -> origin/x" or "   1a2b..3c4d  main -> origin/main".
       const changed = job.lines.filter((l) => /^\s+(\*|[+-]|[0-9a-f]+\.\.)\S*.*->/.test(l)).length;
-      job.summary = changed ? `${changed} branch${changed === 1 ? "" : "es"} updated` : "Nothing new";
+      job.summary = changed ? "Found new updates" : "No new updates";
       return code;
     });
   }
@@ -708,9 +708,7 @@ export class Fleet extends EventEmitter {
       }
       const code = await stream("git", ["-C", rec.dir, "pull", "--ff-only"], { onLine });
       rec.gitAt = 0;
-      const stat = job.lines.find((l) => /\d+ files? changed/.test(l));
-      job.summary = job.lines.some((l) => /Already up to date/i.test(l)) ? "Already up to date"
-        : stat ? stat.trim().replace(/,.*$/, "") : "Updated";
+      job.summary = job.lines.some((l) => /Already up to date/i.test(l)) ? `World ${n} is already up to date` : `World ${n} is updated`;
       return code;
     });
   }
@@ -744,7 +742,7 @@ export class Fleet extends EventEmitter {
       } catch (err) {
         // The world exists; only its type didn't take. Say so and leave it Members.
         onLine(`World type not set (${err.message}); the world is Members. Change it from its World type menu.`);
-        job.summary = `${world} is ready, but as Members (${err.message})`;
+        job.summary = `${world} is ready, but stayed Members`;
       }
       return 0;
     });
@@ -761,7 +759,7 @@ export class Fleet extends EventEmitter {
     await this.refreshGit(rec);
     const dir = rec.dir.replace(/\\/g, "/");
     const meta = { kind: "remove", title: `Remove World ${this.number(rec)}`, detail: rec.branch ?? basename(rec.dir), key: `remove:${rec.id}` };
-    const kept = `Removed; branch ${meta.detail} kept`;
+    const kept = `World ${this.number(rec)} was removed`;
     if (!rec.git?.dirty) {
       return this.task(meta, async (onLine, job) => {
         const code = await stream(this.bash, [join(this.repo, "scripts", "wt"), "rm", dir], { cwd: this.repo, onLine });
@@ -772,13 +770,12 @@ export class Fleet extends EventEmitter {
     if (!discard) {
       throw Object.assign(new Error(`${rec.git.dirty} uncommitted change(s) would be lost.`), { status: 409, changes: rec.git.changes });
     }
-    const n = rec.git.dirty;
     return this.task(meta, async (onLine, job) => {
       for (const c of rec.git.changes) onLine(`discard ${c}`);
       // The other half of `wt rm`: drop the agent MCP entry if it pointed at this worktree.
       await stream("claude", ["mcp", "remove", "tsps", "-s", "local"], { cwd: rec.dir, onLine: () => {} });
       const code = await stream("git", ["-C", this.repo, "worktree", "remove", "--force", dir], { onLine });
-      job.summary = `${kept}; ${n} uncommitted change${n === 1 ? "" : "s"} discarded`;
+      job.summary = kept;
       return code;
     });
   }

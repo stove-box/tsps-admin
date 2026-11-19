@@ -175,7 +175,7 @@ function duration(ms) {
 
 /**
  * Text that changes, in a box that doesn't: every version is laid out in the same spot and only `text`
- * shows, so the box is always as wide as the longest one (world heading, status pill, Check for updates, Copy).
+ * shows, so the box is always as wide as the longest one (world heading, status pill, Update, Copy).
  */
 function steady(text, all) {
   const list = all.includes(text) ? all : [text, ...all];
@@ -306,39 +306,34 @@ function ago(t) {
 }
 const clock = (ms) => { const s = Math.floor(ms / 1000); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`; };
 
-/** The newest line of a running job worth showing, e.g. "Updating files: 45% (4248/9439)". */
-function liveLine(lines) {
-  const line = [...lines].reverse().find((l) => l.trim());
-  return line ? line.trim().replace(/^(remote|fatal|error):\s*/i, "") : "Starting...";
-}
-
-function jobStatus(t) {
+/** One plain sentence for a job card: what it's doing, what happened, or what went wrong. */
+function jobHeadline(t) {
+  const world = /World \d+/.exec(t.title ?? "")?.[0] ?? "the world";
   if (t.state === "running") {
-    return `<span class="job-state running">Working ${clock(Date.now() - t.at)}</span><span class="job-msg">${esc(liveLine(t.lines))}</span>`;
+    return { fetch: "Checking for updates...", update: `Updating ${world}...`, create: `Creating ${world === "the world" ? "a new world" : world}...`, remove: `Removing ${world}...` }[t.kind] ?? `${t.title}...`;
   }
-  const took = t.endedAt && t.endedAt - t.at >= 2000 ? ` in ${clock(t.endedAt - t.at)}` : "";
-  return t.state === "done"
-    ? `<span class="job-state done">${esc(t.summary ?? "Done")}</span><span class="job-when">${ago(t.endedAt ?? t.at)}${took}</span>`
-    : `<span class="job-state failed">Failed</span><span class="job-msg">${esc(t.summary ?? "See details")}</span><span class="job-when">${ago(t.endedAt ?? t.at)}</span>`;
+  if (t.state === "done") return t.summary ?? "Done";
+  return { fetch: "Couldn't check for updates", update: `Couldn't update ${world}`, create: "Couldn't create the world", remove: `Couldn't remove ${world}` }[t.kind] ?? `${t.title} didn't work`;
 }
 
 /** A job with this key is running (the server hands it back rather than starting a second). */
 const jobRunning = (key) => (state.tasks ?? []).some((t) => t.key === key && t.state === "running");
 
-/** "Check for updates" rests while a check runs, then comes back. */
+/** The sidebar's Update (git fetch) rests while a check runs, then comes back. */
 const COPY = ["Copy", "Copied"];
 
 function renderFetchButton() {
   const checking = jobRunning("fetch") || busy.has("fetch");
   const btn = $("#fetch");
   btn.disabled = checking;
-  btn.querySelector(".label").innerHTML = steady(checking ? "Checking..." : "Check for updates", ["Check for updates", "Checking..."]);
+  btn.querySelector(".label").innerHTML = steady(checking ? "Checking..." : "Update", ["Update", "Checking..."]);
 }
 
 function renderJobs() {
   renderFetchButton();
-  // Finished jobs drop off after 5 minutes (the page redraws on every 3 s poll); failed ones stay until Clear.
-  const jobs = (state.tasks ?? []).filter((t) => t.state !== "done" || Date.now() - (t.endedAt ?? t.at) < 5 * 60_000).slice(0, 6);
+  // Finished jobs drop off after 10 seconds (the page redraws on every 3 s poll); failed ones stay until Clear.
+  // Newest last: the list sits at the foot of the sidebar and fills from the bottom up.
+  const jobs = (state.tasks ?? []).filter((t) => t.state !== "done" || Date.now() - (t.endedAt ?? t.at) < 10_000).slice(0, 6).reverse();
   $("#jobs-wrap").hidden = jobs.length === 0;
   $("#jobs-clear").hidden = !jobs.some((t) => t.state !== "running");
   // Details sits on the card's title line and opens the output in a dialog, so the list never grows.
@@ -346,8 +341,8 @@ function renderJobs() {
     <article class="job j-${esc(t.state)} k-${esc(t.kind ?? "job")}" data-id="${esc(t.id)}">
       <span class="job-icon">${JOB_ICON[t.kind] ?? JOB_ICON.fetch}</span>
       <div class="job-body">
-        <div class="job-title">${esc(t.title ?? "Job")}${t.detail ? ` <span class="job-detail">${esc(t.detail)}</span>` : ""}</div>
-        <div class="job-status">${jobStatus(t)}</div>
+        <div class="job-title">${esc(jobHeadline(t))}</div>
+        <div class="job-when">${t.state === "running" ? clock(Date.now() - t.at) : ago(t.endedAt ?? t.at)}</div>
       </div>
       ${t.lines.length ? `<button type="button" class="addr-btn job-more" data-job="${esc(t.id)}" aria-label="Details of ${esc(t.title ?? "this job")}">Details</button>` : ""}
     </article>`).join(""));
@@ -360,9 +355,9 @@ const jobLog = (t) => t.lines.filter((l, i, a) => l || a[i - 1]).join("\n");
 function showJob(id) {
   const t = (state.tasks ?? []).find((x) => x.id === id);
   if (!t) return;
-  $("#job-title").textContent = `${t.title ?? "Job"}${t.detail ? ` (${t.detail})` : ""}`;
-  $("#job-summary").textContent = t.state === "running" ? `Working ${clock(Date.now() - t.at)}`
-    : t.state === "failed" ? `Failed: ${t.summary ?? "see below"}` : t.summary ?? "Done";
+  // The card's sentence as the title; for a failure, the reason the output gives under it.
+  $("#job-title").textContent = jobHeadline(t);
+  $("#job-summary").textContent = t.state === "running" ? clock(Date.now() - t.at) : t.state === "failed" ? t.summary ?? "" : "";
   $("#job-summary").className = `job-summary ${t.state}`;
   const pre = $("#job-log");
   const atEnd = pre.scrollHeight - pre.scrollTop - pre.clientHeight < 24;
@@ -785,7 +780,7 @@ function renderWorld() {
         ${s.main ? "" : `
         <div class="remove-world">
           <button type="button" class="stone red" ${running(s) || b("remove") ? "disabled" : ""} data-remove>${ICON.trash}Remove world</button>
-          <p class="hint">Deletes its folder and player saves; the ${esc(activityOf(s))} branch is kept.</p>
+          <p class="hint">Deletes the world and its player saves.</p>
         </div>`}
           </div>
           <div class="tab-col">
@@ -838,16 +833,19 @@ async function openRemove() {
   const s = current();
   if (!s) return;
   const id = s.id;
-  const changes = s.git?.changes ?? [];
-  const n = changes.length;
+  // In game terms: which world, what's lost, and (only if there are any) a tick for its unsaved edits.
+  const n = (s.git?.changes ?? []).length;
+  const card = `<ul class="restart-list"><li>${worldIcon(s.world)}<span class="rl-n">World ${s.world.number}</span>
+    <span class="rl-t">${esc(shortType(s.world))}</span><span class="rl-p">${esc(s.world.name)}</span></li></ul>`;
   const ok = await askConfirm({
     title: `Remove World ${s.world.number}?`,
-    text: `This deletes its folder (${folderOf(s)}), including its player saves and logs. The branch ${activityOf(s)} is kept, so you can create the world again later.`,
-    yes: "Yes, remove",
-    no: "No",
+    text: "The world and all its player saves are deleted for good.",
+    card,
+    note: "You can make it again later with New world; it starts fresh.",
+    yes: "Remove world",
+    no: "Cancel",
     danger: true,
-    list: n ? { title: `${n === 1 ? "This uncommitted change" : `These ${n} uncommitted changes`} will be lost:`, items: changes } : null,
-    check: n ? `Discard ${n === 1 ? "it" : "them"} and remove the world` : null,
+    check: n ? `Also throw away ${n} unsaved edit${n === 1 ? "" : "s"} to its game files` : null,
   });
   if (ok) act(id, "remove", { body: { discard: n > 0 } });
 }
@@ -889,7 +887,7 @@ function renderChat() {
   // tags are dimmed so the words after them stand out. Long messages wrap under the message only.
   body.innerHTML = lines.slice(-2000).map((p) => {
     const kind = p.who === "admin" ? "admin" : isError(p.text) ? "err" : isWarn(p.text) ? "warn" : "";
-    const text = esc(p.text.trim()).replace(/^((?:\[[^\]\n]{1,40}\]\s*)+)/, '<span class="tag">$1</span>');
+    const text = esc(p.text.trimEnd()).replace(/^((?:\[[^\]\n]{1,40}\]\s*)+)/, '<span class="tag">$1</span>');
     return `<div class="ln ${kind}"><span class="time">${lineTime(p.t)}</span>`
       + `<span class="who ${p.who || "other"}">${WHO[p.who] ?? ""}</span><span class="msg">${text}</span></div>`;
   }).join("");
@@ -1035,12 +1033,14 @@ let panelRestarting = false; // reload the page once the new panel answers, so i
 $("#panel-restart").onclick = async () => {
   const mine = state.servers.filter((s) => s.managed);
   const players = mine.reduce((n, s) => n + (s.players ?? 0), 0);
+  // A summary card: one row per world that shuts down (icon, number, type, players).
+  const rows = mine.map((s) => `<li>${worldIcon(s.world)}<span class="rl-n">World ${s.world.number}</span>
+    <span class="rl-t">${esc(shortType(s.world))}</span><span class="rl-p">${s.status === "online" ? `${s.players ?? 0} online` : esc(STATUS[s.status] ?? s.status)}</span></li>`);
   const ok = await askConfirm({
     title: "Restart the panel?",
-    text: mine.length
-      ? `The ${mine.length === 1 ? "world" : `${mine.length} worlds`} this panel started (${mine.map((s) => `World ${s.world.number}`).join(", ")}) ${mine.length === 1 ? "shuts" : "shut"} down and ${mine.length === 1 ? "starts" : "start"} again with the new panel.${players ? ` ${players} player${players === 1 ? " is" : "s are"} saved and disconnected.` : ""}`
-      : "No world this panel started is running, so no world is affected.",
-    note: "Worlds launched from a terminal keep running. This page reloads when the panel is back.",
+    text: !mine.length ? "No worlds are affected." : mine.length === 1 ? "This world will restart:" : "These worlds will restart:",
+    card: mine.length ? `<ul class="restart-list">${rows.join("")}</ul>` : "",
+    note: players ? `${players} player${players === 1 ? " is" : "s are"} saved first.` : "",
     yes: "Restart panel",
     no: "Cancel",
   });
