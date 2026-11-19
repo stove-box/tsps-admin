@@ -528,12 +528,32 @@ export class Fleet extends EventEmitter {
    */
   async setWorldType(id, type) {
     const rec = this.get(id);
-    const fail = (message, status = 409) => { throw Object.assign(new Error(message), { status }); };
     const label = availableTypes(rec.dir).find((t) => t.id === type)?.label;
-    if (!label) fail("This world's code doesn't have that world type.", 400);
+    if (!label) throw Object.assign(new Error("This world's code doesn't have that world type."), { status: 400 });
     const layers = readLayers(rec.dir);
     if (currentType(merge(layers.shipped, layers.local)) === type) return { result: "unchanged" };
-    const changes = changesFor(type, layers.shipped);
+    return this.changeWorld(rec, layers, changesFor(type, layers.shipped), { what: `as ${label}`, log: `world type -> ${label}` });
+  }
+
+  /** The world's experience rate (world.json's experienceMultiplier): any number above 0, e.g. 1, 1.5, 10. */
+  async setXpRate(id, rate) {
+    const rec = this.get(id);
+    if (typeof rate !== "number" || !Number.isFinite(rate) || rate <= 0) {
+      throw Object.assign(new Error("The XP rate must be a number above 0."), { status: 400 });
+    }
+    const layers = readLayers(rec.dir);
+    if (Number(merge(layers.shipped, layers.local).experienceMultiplier ?? 1) === rate) return { result: "unchanged" };
+    return this.changeWorld(rec, layers, { world: { experienceMultiplier: rate } }, { what: `with x${rate} XP`, log: `XP rate -> x${rate}` });
+  }
+
+  /**
+   * Saves world settings `changes`. Online: through the world settings page's Apply, which saves players,
+   * writes world.local.json and restarts (with the in-game update countdown when players are on).
+   * Not running, or running with the game stopped: world.local.json is written here, for the next start.
+   * `what` finishes the sentences ("restarts as Members", "with x5 XP"); `log` is the console line.
+   */
+  async changeWorld(rec, layers, changes, { what, log }) {
+    const fail = (message, status = 409) => { throw Object.assign(new Error(message), { status }); };
     const problem = validate(merge(layers.shipped, applyChanges(layers.shipped, layers.local, changes)));
     if (problem) fail(problem, 400);
     const status = rec.probe?.serverStatus;
@@ -546,12 +566,12 @@ export class Fleet extends EventEmitter {
       if (r.status >= 400 || r.status === 0) fail(r.json?.error ?? r.json?.errors?.join("; ") ?? `World settings refused the change (HTTP ${r.status}).`);
       const applied = r.json?.applied;
       if (applied === "restarting") this.beginTransition(rec, "restart", "saving");
-      this.log(rec, `[admin] world type -> ${label} (${applied})`);
+      this.log(rec, `[admin] ${log} (${applied})`);
       return {
         result: applied,
-        message: applied === "countdown" ? `Players get a ${r.json.seconds}-second update countdown, then World ${this.number(rec)} restarts as ${label}.`
-          : applied === "restarting" ? `Restarting as ${label}.`
-          : `Saved. Restart the world to become ${label}.`,
+        message: applied === "countdown" ? `Players get a ${r.json.seconds}-second update countdown, then World ${this.number(rec)} restarts ${what}.`
+          : applied === "restarting" ? `Restarting ${what}.`
+          : "Saved. It takes effect when the world restarts.",
       };
     }
     if (rec.procState === "stopping" || status === "starting" || status === "stopping" || (rec.proc && !status)) {
@@ -560,9 +580,9 @@ export class Fleet extends EventEmitter {
     if (rec.probe?.gameUp && !rec.probe?.panelUp) fail("This world runs without its settings page; shut it down first.");
     writeLocal(rec.dir, layers, applyChanges(layers.shipped, layers.local, changes));
     rec.world = worldInfo(rec.dir);
-    this.log(rec, `[admin] world type -> ${label} (saved for the next launch)`);
+    this.log(rec, `[admin] ${log} (saved for the next launch)`);
     this.emit("state");
-    return { result: "written", message: `Saved. World ${this.number(rec)} is ${label} from its next launch.` };
+    return { result: "written", message: `Saved. World ${this.number(rec)} starts ${what} from its next launch.` };
   }
 
   number(rec) {

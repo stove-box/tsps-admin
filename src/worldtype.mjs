@@ -90,9 +90,16 @@ export function changesFor(type, shipped) {
   };
 }
 
-/** The server's applySection: null or the shipped value removes the local key; empty sections go. */
+/**
+ * The server's applySection: null or the shipped value removes the local key; empty sections go.
+ * `changes.world` holds top-level settings (experienceMultiplier), which have no section.
+ */
 export function applyChanges(shipped, local, changes) {
   const next = structuredClone(local);
+  for (const [key, value] of Object.entries(changes.world ?? {})) {
+    if (value === null || JSON.stringify(value) === JSON.stringify(shipped[key])) delete next[key];
+    else next[key] = value;
+  }
   for (const section of ["plugins", "pluginConfig"]) {
     const edits = changes[section];
     if (!edits) continue;

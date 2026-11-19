@@ -84,6 +84,15 @@ test("world types: read, change and write like the server's world settings page"
   assert.deepEqual(wt.applyChanges(shippedHc, {}, wt.changesFor("members", shippedHc)), { pluginConfig: { "HardcoreWorld:enabled": false } });
 });
 
+test("XP rate: a top-level override in world.local.json, dropped when back to world.json's rate", async () => {
+  const wt = await import("../src/worldtype.mjs");
+  const shipped = { experienceMultiplier: 1, plugins: {} };
+  let local = wt.applyChanges(shipped, { name: "Mine", pluginConfig: { "league:type": 5 } }, { world: { experienceMultiplier: 5 } });
+  assert.deepEqual(local, { name: "Mine", pluginConfig: { "league:type": 5 }, experienceMultiplier: 5 }, "other settings are kept");
+  local = wt.applyChanges(shipped, local, { world: { experienceMultiplier: 1 } });
+  assert.deepEqual(local, { name: "Mine", pluginConfig: { "league:type": 5 } });
+});
+
 test("world types offered follow the worktree's own data", async () => {
   const wt = await import("../src/worldtype.mjs");
   const dir = mkdtempSync(join(tmpdir(), "tsps-admin-"));
