@@ -19,7 +19,7 @@ The user-facing guide is README.md. This file keeps the technical detail: how th
 
 ## Worlds
 
-- A world is the main checkout or a `scripts/wt` worktree. A worktree counts only once `wt new` has
+- A world is a `scripts/wt` worktree. The main checkout (`tspsRepo`) is the project, not a world: it isn't listed, so every world can be removed. A worktree counts only once `wt new` has
   written its `WT_SLOT` (written last), so a half-made world never shows as a second World 1.
 - Ports come from the slot (`env.mjs` `portsFor`); the main checkout keeps the defaults.
 - World numbers are display only: the saved order (`settings.order`, folder keys), then the main

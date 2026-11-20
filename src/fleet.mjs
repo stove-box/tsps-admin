@@ -181,10 +181,10 @@ export class Fleet extends EventEmitter {
     for (const wt of list) {
       if (wt.prunable || !existsSync(wt.dir)) continue;
       // A worktree is a world once it has its port slot. `wt new` writes the slot last, so a world
-      // being created would otherwise show up with the main checkout's ports: as a second World 1,
-      // probing (and offering to shut down) the real one.
+      // being created would otherwise show up with the main checkout's ports. The main checkout
+      // itself is the project, not a world: it isn't listed, so only removable worlds are managed.
       const env = worktreeEnv(wt.dir);
-      if (!samePath(wt.dir, this.repo) && portsFor(env).slot == null) continue;
+      if (samePath(wt.dir, this.repo) || portsFor(env).slot == null) continue;
       let rec = [...this.servers.values()].find((r) => samePath(r.dir, wt.dir));
       if (!rec) {
         let id = slug(wt.dir);
@@ -832,6 +832,6 @@ export class Fleet extends EventEmitter {
   state() {
     const servers = [...this.servers.values()].map((r) => this.view(r));
     servers.sort((a, b) => a.world.number - b.world.number || a.id.localeCompare(b.id));
-    return { repo: this.repo, servers, tasks: this.tasks.map(({ lines, ...t }) => ({ ...t, lines: lines.slice(-200) })) };
+    return { repo: this.repo, types: worldInfo(this.repo).types, servers, tasks: this.tasks.map(({ lines, ...t }) => ({ ...t, lines: lines.slice(-200) })) };
   }
 }

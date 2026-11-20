@@ -277,9 +277,8 @@ button.stone.icon svg { width: 18px; height: 18px; }
 .kv dd { margin: 0; color: var(--rs-white); overflow-wrap: anywhere; }
 .kv dd.y { color: var(--rs-yellow); }
 .kv .good { color: #3ee03e; } .kv .bad { color: var(--rs-orange); }
-.commit { margin-top: 12px; padding: 8px 10px; font: 12.5px/1.45 "IBM Plex Sans", sans-serif; color: #d9cdb2; overflow-wrap: anywhere; }
-.commit code { color: var(--rs-yellow); }
-.commit .when { color: #a79a80; }
+.kv .dim { color: #a79a80; }
+.kv a.dim:hover, .kv a.dim:focus-visible { color: var(--rs-yellow); }
 .panel .links { display: flex; flex-wrap: wrap; gap: 8px; margin-top: auto; padding-top: 14px; }
 .options { display: grid; gap: 10px; margin-top: 2px; }
 .options .hint { font: 12px/1.4 "IBM Plex Sans", sans-serif; color: #b9ad97; margin: -4px 0 0 27px; text-shadow: none; }

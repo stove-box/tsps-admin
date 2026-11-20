@@ -795,9 +795,9 @@ function renderWorld() {
           <dt>Branch</dt><dd class="y">${esc(g.branch ?? "?")}</dd>
           <dt>Tracking</dt><dd>${esc(g.fork?.parent ? `${g.fork.parent} (via ${g.upstream})` : g.upstream ?? "none")}</dd>
           <dt>Status</dt><dd>${sync}</dd>
-          <dt>Changes</dt><dd>${g.dirty ? `<span class="bad">${g.dirty} uncommitted</span>` : `<span class="good">None</span>`}</dd>
+          ${g.last ? `<dt>Latest</dt><dd>${esc(g.last.subject)}</dd>
+          <dt>Updated</dt><dd>${esc(g.last.when)} (<a class="dim link" href="https://github.com/${esc(g.fork?.repo ?? "RSPSApp/tsps")}/commit/${esc(g.last.hash)}" target="_blank" rel="noopener">${esc(g.last.hash)}</a>)</dd>` : ""}
         </dl>
-        ${g.last ? `<div class="commit osrs-inset"><code>${esc(g.last.hash)}</code> ${esc(g.last.subject)} <span class="when">- ${esc(g.last.when)}</span></div>` : ""}
         ${g.upstream ? (jobRunning(`update:${s.id}`) || busy.has(`${s.id}:pull`)
           ? `<div class="links"><button type="button" class="stone" disabled>${ICON.update}Updating...</button></div>`
           : `<div class="links"><button type="button" class="stone" data-act="pull">${ICON.update}${waiting ? `Update (${waiting} new)` : "Update"}</button></div>`) : ""}`
@@ -1109,7 +1109,7 @@ let newType = "members";
 
 /** A new world starts from main, so it offers the main checkout's types. */
 function newWorldTypes() {
-  return state.servers.find((s) => s.main)?.world.types
+  return state.types
     ?? [{ id: "members", label: "Members", group: "Standard" }, { id: "f2p", label: "Free-to-play", group: "Standard" }];
 }
 const newTypeInfo = () => newWorldTypes().find((t) => t.id === newType) ?? newWorldTypes()[0];
