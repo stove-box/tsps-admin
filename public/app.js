@@ -800,6 +800,11 @@ function renderWorld() {
         <ul class="addresses">
           ${address("Game client", s.links.client, { href: running(s) ? s.links.client : null })}
           ${address("Game server", `localhost:${p.game}`)}
+          <li class="address">
+            <span class="addr-label">Desktop client</span>
+            <span class="addr-value">${s.desktop ? "Connects here" : s.desktopPicked ? "Picked; connects here when online" : "Another world"}</span>
+            ${s.desktop || s.desktopPicked ? "" : `<button type="button" class="addr-btn" data-act="desktop">Use</button>`}
+          </li>
           ${address("Agent MCP", s.links.mcp)}
           ${address("RuneLite gateway", `localhost:${p.gateway}`)}
           <li class="address">

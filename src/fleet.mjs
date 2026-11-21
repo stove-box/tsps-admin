@@ -860,10 +860,23 @@ export class Fleet extends EventEmitter {
 
   // ---- view ----
 
+  /** The world the desktop relay serves: the one picked, while it's online, else the first online world. */
+  desktopWorld() {
+    const online = [...this.servers.values()].filter((r) => this.view(r).status === "online")
+      .sort((a, b) => this.number(a) - this.number(b));
+    return online.find((r) => r.id === this.desktopId) ?? online[0] ?? null;
+  }
+
+  setDesktopWorld(id) {
+    this.desktopId = this.get(id).id;
+    this.emit("state");
+  }
+
   view(rec) {
     const k = this.key(rec);
     return {
       id: rec.id,
+      desktopPicked: this.desktopId === rec.id,
       dir: rec.dir,
       main: rec.main,
       branch: rec.branch,
@@ -894,7 +907,8 @@ export class Fleet extends EventEmitter {
   }
 
   state() {
-    const servers = [...this.servers.values()].map((r) => this.view(r));
+    const desktop = this.desktopWorld()?.id;
+    const servers = [...this.servers.values()].map((r) => ({ ...this.view(r), desktop: r.id === desktop }));
     servers.sort((a, b) => a.world.number - b.world.number || a.id.localeCompare(b.id));
     return { repo: this.repo, types: worldInfo(this.repo).types, servers, tasks: this.tasks.map(({ lines, ...t }) => ({ ...t, lines: lines.slice(-200) })) };
   }

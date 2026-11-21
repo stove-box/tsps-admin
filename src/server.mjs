@@ -5,13 +5,14 @@ import { existsSync, mkdirSync, openSync, readFileSync, writeFileSync } from "no
 import http from "node:http";
 import { dirname, extname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { startDesktopRelay } from "./desktop-relay.mjs";
 import { Fleet } from "./fleet.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const PUBLIC = join(ROOT, "public");
 
 function loadConfig() {
-  const config = { tspsRepo: resolve(ROOT, "..", "tsps"), port: 47100, bash: null, dataDir: join(ROOT, "data") };
+  const config = { tspsRepo: resolve(ROOT, "..", "tsps"), port: 47100, desktopPort: 43580, bash: null, dataDir: join(ROOT, "data") };
   for (const file of ["config.json", "config.local.json"]) {
     try { Object.assign(config, JSON.parse(readFileSync(join(ROOT, file), "utf8"))); } catch (err) {
       if (err.code !== "ENOENT") throw new Error(`${file}: ${err.message}`);
@@ -46,6 +47,7 @@ mkdirSync(config.dataDir, { recursive: true });
 const TOKEN = loadToken(config.dataDir);
 const COOKIE = `tsps_admin_${config.port}`;
 const fleet = new Fleet({ repo: config.tspsRepo, dataDir: config.dataDir, bash: config.bash });
+const desktopRelay = startDesktopRelay(config.desktopPort, () => fleet.desktopWorld()?.ports.game);
 
 // ---- access: loopback listener, token cookie, pinned Host (DNS rebinding), same-origin writes ----
 
@@ -166,6 +168,7 @@ async function handle(req, res) {
     if (action === "flags") { fleet.setFlags(id, body); return send(res, 200, { ok: true }); }
     if (action === "world-type") return send(res, 200, { ok: true, ...(await fleet.setWorldType(id, String(body.type ?? ""))) });
     if (action === "xp-rate") return send(res, 200, { ok: true, ...(await fleet.setXpRate(id, body.rate)) });
+    if (action === "desktop") { fleet.setDesktopWorld(id); return send(res, 200, { ok: true }); }
     const fn = ACTIONS[action];
     if (!fn) return send(res, 404, { error: "Unknown action" });
     fleet.get(id);
@@ -221,6 +224,7 @@ async function quit({ restart = false } = {}) {
   console.info(restart ? "[admin] restarting the panel: stopping the servers it started, to start them again..."
     : "[admin] stopping the servers this panel started (Ctrl+C again to force)...");
   server.close();
+  desktopRelay.close();
   // Clear the list too: a broadcast to an ended response throws, which would kill the panel mid-shutdown.
   for (const res of clients) res.end();
   clients.clear();
