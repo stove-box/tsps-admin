@@ -8,6 +8,8 @@ The user-facing guide is README.md. This file keeps the technical detail: how th
 - `src/server.mjs`: HTTP server, auth, routes, server-sent events (`/api/events`), quit and restart.
 - `src/fleet.mjs`: the worlds (`Fleet`): discovery, probing, start/stop, crash restarts, jobs
   (`task()`), git updates, create/remove worlds, world settings changes.
+- `src/desktop-relay.mjs`: the TSPS client's relay and `openDesktopClient` (see Desktop apps).
+- `launcher/`: the Tauri desktop apps (see Desktop apps). Not part of `npm test`.
 - `src/env.mjs`: ports and env per worktree. `src/git.mjs`: git helpers. `src/worldtype.mjs`:
   world.json / world.local.json layers, world types, the server's apply rules.
 - `public/`: one page (`index.html`, `app.js`, `style.css`), no build step. Static files are read
@@ -67,6 +69,7 @@ The user-facing guide is README.md. This file keeps the technical detail: how th
   `node src/server.mjs`, detached with no window, writing its output to `data/panel.log` (rewritten on
   each restart). The new panel's `startOnBoot` starts the resume list once. The page reloads when its
   event stream reconnects.
+- `POST /api/panel/quit` is the same `quit()` as Ctrl+C; TSPS Admin's tray Quit uses it.
 - Logs: each world's current run is in `data/logs/<worktree>.log`, the previous one in `.log.1`.
   A world started from a terminal has no stdout here, so its console follows the game's own
   `server/logs/server.log` (`tailExternal`, from the last 256 KB, on each poll). The
@@ -78,6 +81,49 @@ Listens on 127.0.0.1 only. Every request needs the token (cookie `tsps_admin_<po
 `/?token=`, or `Authorization: Bearer`). Only localhost Host headers are accepted (against DNS
 rebinding), cross-origin writes are refused, and bodies must be JSON. The page links each world's
 settings page with that world's token, so the panel link is as good as a password.
+
+The desktop relay (`127.0.0.1:desktopPort`) takes no token: it only pipes to a game port, which
+already accepts anyone on this PC. The desktop apps read `data/admin.token` from this checkout.
+TSPS Admin shows the panel as a remote page; `capabilities/panel.json` gives pages on
+`http://127.0.0.1:*` only drag, minimize, maximize and hide, nothing else in the app.
+
+## Desktop apps
+
+The TSPS client is RSPSApp/tsps-desktop-client, never modified: the user wants it to keep taking
+upstream updates. It's built from a profile (`launcher/client/world.json`) that always points at
+the relay, so switching worlds never needs a rebuild.
+
+- Relay (`src/desktop-relay.mjs`): a raw TCP pipe from `desktopPort` (43580) to the game port of
+  `fleet.desktopWorld()`: the world picked with **Use** or `desktop-play` (`fleet.desktopId`, in
+  memory) while it's online, else the first online world. HTTP (`/api/world-info`) and the game's
+  WebSocket both pass through. The target is read per connection, so an open game stays on its world.
+- The launcher checks the world's `clientVersion` against RSPSApp's signed releases. A Windows checkout
+  with CRLF line endings computes a different ID (tsps `scripts/client-version.mjs` only normalizes some
+  extensions), so set `core.autocrlf=false` in the tsps repo and re-check out.
+- `launcher/build.mjs` builds both apps (`npm run build[:worlds|:admin]` in `launcher/`). Building
+  TSPS Admin first clones/resets the client into `launcher/.desktop-client/` (upstream `origin/main`),
+  builds it with its own `CARGO_TARGET_DIR` (or `launcher/.cargo`'s shared target would mix the
+  installers), undoes the generated-file churn with `git checkout -- .`, and copies its setup.exe to
+  `admin/src-tauri/resources/`. TSPS Admin's NSIS post-install hook (`installer-hooks.nsh`) runs it
+  silently. Windows only so far; on macOS `buildClient` stops with a message.
+- `launcher/shared.rs` (both apps, via `#[path]`): the panel's port and token from this checkout
+  (`CARGO_MANIFEST_DIR` baked in at build time), and `ensure_panel`, which starts
+  `node src/server.mjs` hidden like the panel's own restart, with the node that ran the build
+  (`TSPS_NODE`).
+- TSPS Admin (`launcher/admin`): no native frame. An init script (`titlebar.js`) makes the panel's
+  `header.top-bar` the title bar and adds the window buttons; another sets `__TSPS_ADMIN_APP__`,
+  which makes the page's Play button send `desktop-play` instead of opening the web client. X hides
+  to the tray; single instance. Tray Quit draws its confirm dialog by `eval` into whatever page is
+  showing. Its buttons navigate to `http://tsps-admin.invalid/...`, which `on_navigation`
+  intercepts, so the remote page needs no IPC. After `/api/panel/quit` it waits for every world's
+  game port (listening when Quit was pressed) to close, up to 10 minutes. If quitting fails it
+  stays open and says why, rather than looking like the worlds stopped.
+- TSPS Worlds (`launcher/worlds`): lists `/api/state` servers with Rust commands (`worlds`, `play`);
+  `play` posts the `desktop` action and starts TSPS Local. The page polls every 3 s, one request
+  at a time, since the first may be starting the panel.
+- Both apps copy the RuneScape fonts (and world icons) from `public/` in `build.rs`.
+- rustc sometimes crashes with 0xC0000005 on the user's machine (hardware). Rerun with
+  `CARGO_BUILD_JOBS=2`.
 
 ## Page conventions
 
