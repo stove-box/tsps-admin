@@ -3,11 +3,12 @@
 One page to run every tsps game world on this PC. Each copy of the game (the main one and any you
 make with **+**) shows up as a numbered world in a World Switcher, like the one in Old School RuneScape.
 From there you can launch worlds, play them, change their type and XP rate, update them, and watch
-their console.
+their console. It runs in your browser, or in its own window with the [desktop apps](#desktop-apps).
 
 ## Start it
 
-Double-click `start-panel.cmd` (or run `npm start`). It prints a link like
+Open **TSPS Admin** if you've installed the [desktop apps](#desktop-apps). Otherwise double-click
+`start-panel.cmd` (or run `npm start`). It prints a link like
 `http://localhost:47100/?token=…`. Open it once and the panel remembers you; after that,
 `http://localhost:47100` is enough.
 
@@ -27,8 +28,9 @@ RSPSApp/tsps code. The arrows button lets you drag worlds into a new order (✓ 
 this only changes their numbers, so nothing restarts.
 
 **A world (right).**
-- **Play** opens the game. **Launch**, **Shut down** and **Restart** do what they say. Players are
-  always saved before a world stops.
+- **Play** opens the game: the web client in a browser tab, or the TSPS client when you're in the
+  TSPS Admin app. **Launch**, **Shut down** and **Restart** do what they say. Players are always
+  saved before a world stops.
 - The **world type** dropdown (Members, Free-to-play, Hardcore, Leagues) and the **XP rate** button
   change the world. If it's online, it restarts to apply them, with a 60-second countdown when
   players are on. If it's offline, the change applies at the next launch.
@@ -37,6 +39,7 @@ this only changes their numbers, so nothing restarts.
 - **Game update** (its own window beside Options): the branch, whether it's up to date, the latest
   change (linked on GitHub), and Update to pull the latest code.
 - **Connection:** the addresses for the game client, server, Agent MCP and RuneLite gateway.
+  **Desktop client** shows whether the TSPS client connects to this world; **Use** points it here.
 - **Console:** the world's live output, with filters for Game, Client, Panel and Errors, and a search
   box.
 
@@ -48,9 +51,12 @@ this only changes their numbers, so nothing restarts.
 Two apps, each usable on its own. Either one starts the panel in the background if it isn't
 running (hidden, logging to `data/panel.log`), so closing a window never stops your worlds.
 
-- **TSPS Admin** shows this panel in its own window. Closing the window hides it to the tray; click
-  the tray icon to bring it back. **Quit and stop all worlds** in the tray menu asks first, then waits
-  for the worlds to save and stop. **Play** in this window opens the TSPS client on that world.
+- **TSPS Admin** shows this panel in its own window, with the panel's top bar as the title bar
+  (drag it to move, double-click to maximize). While the panel starts, it shows a loading bar and
+  a "Did you know?" tip. The window's **X** hides it to the tray; click the tray icon to bring it
+  back. **Quit and stop all worlds…** in the tray menu asks first, then waits until every online
+  world has saved and stopped before it closes. **Play** in this window opens the TSPS client on
+  that world.
 - **TSPS Worlds** lists the worlds; click an online one and the TSPS client opens on it.
 
 The TSPS client is RSPSApp's [tsps-desktop-client](https://github.com/RSPSApp/tsps-desktop-client),
@@ -73,8 +79,11 @@ Build and install them once:
 `config.json` holds the defaults. Put your own in `config.local.json` (it isn't committed):
 
 ```json
-{ "tspsRepo": "../tsps", "port": 47100 }
+{ "tspsRepo": "../tsps", "port": 47100, "desktopPort": 43580 }
 ```
+
+`desktopPort` is the TSPS client's relay; if you change it, change `serverUrl` in
+`launcher/client/world.json` to match and rebuild TSPS Admin.
 
 ## Keep the link private
 
@@ -85,5 +94,7 @@ like a password; delete `data/admin.token` to get a new one.
 
 The page follows rsps.app/host. World icons are the OSRS wiki's sprites; the RuneScape fonts come from
 the tsps client. IBM Plex Sans is under the SIL Open Font License (`public/ibm-plex-license.txt`).
+A few of TSPS Admin's loading tips are the game's own, from the OSRS wiki's
+[Did you know?](https://oldschool.runescape.wiki/w/Did_you_know%3F) page.
 
 Notes for developers and AI assistants are in [CLAUDE.md](CLAUDE.md).
