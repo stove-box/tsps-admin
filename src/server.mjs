@@ -233,3 +233,5 @@ process.on("unhandledRejection", (err) => console.error("[admin]", err?.message 
 process.on("SIGINT", quit);
 process.on("SIGTERM", quit);
 process.on("SIGBREAK", quit);
+// Closing the console window: Windows allows ~10 s before it kills the panel, so stopping starts at once.
+process.on("SIGHUP", quit);
