@@ -1,6 +1,13 @@
 {
   "identifier": "default",
-  "description": "The starting screen only; the panel itself runs as a remote page with no app access.",
+  "description": "The starting screen: its title bar can move, minimize, maximize and hide the window.",
   "windows": ["main"],
-  "permissions": ["core:default"]
+  "permissions": [
+    "core:default",
+    "core:window:allow-start-dragging",
+    "core:window:allow-minimize",
+    "core:window:allow-toggle-maximize",
+    "core:window:allow-internal-toggle-maximize",
+    "core:window:allow-hide"
+  ]
 }

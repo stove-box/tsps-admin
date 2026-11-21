@@ -158,6 +158,7 @@ fn main() {
             tauri::WebviewWindowBuilder::from_config(app.handle(), &app.config().app.windows[0])?
                 // Tells the panel it's in the app, so its Play button opens the desktop client (public/app.js).
                 .initialization_script("Object.defineProperty(window, '__TSPS_ADMIN_APP__', { value: true });")
+                .initialization_script(include_str!("titlebar.js"))
                 .on_navigation(move |url| {
                     if url.host_str() != Some(ACTION_HOST) { return true; }
                     if url.path() == "/shutdown" { tauri::async_runtime::spawn(shutdown(handle.clone())); }
