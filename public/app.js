@@ -6,7 +6,7 @@ const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "
 let state = { servers: [], tasks: [] };
 let selected = null;
 let chatFilter = "all";
-let worldTab = "update"; // the world view's tab: "update" (Options & Updates) or "connection"
+let worldTab = "update"; // the world view's tab: "update" (Options) or "connection"
 const logLines = new Map(); // id -> [{t, line}]
 const busy = new Set(); // `${id}:${action}` waiting for a response
 
@@ -70,7 +70,14 @@ function showTab(id) {
   $(`#tab-${id}`)?.focus();
 }
 
+/** Page-only cards beside the server's jobs (info messages); they leave after 10 s like finished jobs. */
+let notes = [];
+
 function toast(msg, kind = "error") {
+  if (kind === "info") {
+    notes = [...notes, { id: `note-${Date.now()}`, kind: "note", state: "done", summary: msg, at: Date.now(), lines: [] }];
+    return renderJobs();
+  }
   const el = $("#toast");
   el.textContent = msg;
   el.className = `toast ${kind}`;
@@ -301,6 +308,7 @@ const JOB_ICON = {
   update: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11m0 0-4-4m4 4 4-4M5 19h14" /></svg>',
   fetch: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.3-5.7M20 4v5h-5" /></svg>',
   remove: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 12a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1l1-12M9 7V4h6v3" /></svg>',
+  note: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9" /><path d="M12 11v5M12 8h.01" /></svg>',
 };
 let jobShown = null; // the job whose output the Details dialog shows, so it follows the job live
 
@@ -340,7 +348,9 @@ function renderJobs() {
   renderFetchButton();
   // Finished jobs drop off after 10 seconds (the page redraws on every 3 s poll); failed ones stay until Clear.
   // Newest last: the list sits at the foot of the sidebar and fills from the bottom up.
-  const jobs = (state.tasks ?? []).filter((t) => t.state !== "done" || Date.now() - (t.endedAt ?? t.at) < 10_000).slice(0, 6).reverse();
+  notes = notes.filter((t) => Date.now() - t.at < 10_000);
+  const jobs = [...notes, ...(state.tasks ?? [])].sort((a, b) => b.at - a.at)
+    .filter((t) => t.state !== "done" || Date.now() - (t.endedAt ?? t.at) < 10_000).slice(0, 6).reverse();
   $("#jobs-wrap").hidden = jobs.length === 0;
   $("#jobs-clear").hidden = !jobs.some((t) => t.state !== "running");
   // Details sits on the time line, so the sentence gets the card's full width; it opens the output in a dialog.
@@ -350,7 +360,7 @@ function renderJobs() {
       <div class="job-body">
         <div class="job-title">${esc(jobHeadline(t)).replace(/World \d+/, '<b class="job-world">$&</b>')}</div>
         <div class="job-when"><span>${t.state === "running" ? clock(Date.now() - t.at) : ago(t.endedAt ?? t.at)}</span>
-          ${t.lines.length ? `<button type="button" class="addr-btn job-more" data-job="${esc(t.id)}" aria-label="Details of ${esc(t.title ?? "this job")}">Details</button>` : ""}</div>
+          ${t.lines.length && !(t.quiet && t.state === "done") ? `<button type="button" class="addr-btn job-more" data-job="${esc(t.id)}" aria-label="Details of ${esc(t.title ?? "this job")}">Details</button>` : ""}</div>
       </div>
     </article>`).join(""));
   if (jobShown) showJob(jobShown);
@@ -385,7 +395,7 @@ $("#jobs").addEventListener("click", (e) => {
   $("#job-log").scrollTop = $("#job-log").scrollHeight;
 });
 $("#job-dialog").addEventListener("close", () => { jobShown = null; });
-$("#jobs-clear").onclick = () => post("/api/tasks/clear").catch((err) => toast(err.message));
+$("#jobs-clear").onclick = () => (notes = [], post("/api/tasks/clear").catch((err) => toast(err.message)));
 setInterval(() => { if (state.tasks?.length) renderJobs(); }, 1000);
 
 // ---- selected world ----
@@ -761,21 +771,19 @@ function renderWorld() {
             : !running(s) && lastExit ? `<span class="fact">${ICON.clock}Shut down ${esc(lastExit)}</span>` : ""}
         </div>
         ${typePicker(s)}
-        <div class="worldname">${esc(s.world.name)}${s.world.description ? ` <span class="dim">- ${esc(s.world.description)}</span>` : ""}
-          <span class="dim">- branch</span> <span class="branch">${esc(activityOf(s))}</span></div>
+        <div class="worldname">${esc(s.world.name)}${s.world.description ? ` <span class="dim">- ${esc(s.world.description)}</span>` : ""}</div>
       </div>
       <div class="hero-actions">${heroActions(s)}</div>
     </div>
     ${banners(s)}
+    <div class="world-split">
     <section class="panel osrs world-tabs">
       <div class="tabs" role="tablist" aria-label="World details">
-        <button type="button" role="tab" id="tab-update" data-tab="update" aria-controls="tabpanel-update" aria-selected="${worldTab === "update"}" tabindex="${worldTab === "update" ? 0 : -1}">Options &amp; Updates</button>
+        <button type="button" role="tab" id="tab-update" data-tab="update" aria-controls="tabpanel-update" aria-selected="${worldTab === "update"}" tabindex="${worldTab === "update" ? 0 : -1}">Options</button>
         <button type="button" role="tab" id="tab-connection" data-tab="connection" aria-controls="tabpanel-connection" aria-selected="${worldTab === "connection"}" tabindex="${worldTab === "connection" ? 0 : -1}">Connection</button>
       </div>
       <div class="tabpanels">
-        <div role="tabpanel" id="tabpanel-update" aria-labelledby="tab-update" class="tab-cols" ${worldTab === "update" ? "" : "data-off"}>
-          <div class="tab-col">
-            <h3 class="rs-title">Options</h3>
+        <div role="tabpanel" id="tabpanel-update" aria-labelledby="tab-update" class="tab-col" ${worldTab === "update" ? "" : "data-off"}>
         <div class="options">
           <label class="osrs-check"><input type="checkbox" data-flag="autostart" ${s.autostart ? "checked" : ""}><span class="box" aria-hidden="true"></span><span>Launch when the panel opens</span></label>
           <p class="hint">Starts this world whenever the admin panel starts.</p>
@@ -787,22 +795,6 @@ function renderWorld() {
           <button type="button" class="stone red" ${running(s) || b("remove") ? "disabled" : ""} data-remove>${ICON.trash}Remove world</button>
           <p class="hint">Deletes the world and its player saves.</p>
         </div>`}
-          </div>
-          <div class="tab-col">
-            <h3 class="rs-title">Game update</h3>
-        ${g ? `
-        <dl class="kv">
-          <dt>Branch</dt><dd class="y">${esc(g.branch ?? "?")}</dd>
-          <dt>Tracking</dt><dd>${esc(g.fork?.parent ? `${g.fork.parent} (via ${g.upstream})` : g.upstream ?? "none")}</dd>
-          <dt>Status</dt><dd>${sync}</dd>
-          ${g.last ? `<dt>Latest</dt><dd>${esc(g.last.subject)}</dd>
-          <dt>Updated</dt><dd>${esc(g.last.when)} (<a class="dim link" href="https://github.com/${esc(g.fork?.repo ?? "RSPSApp/tsps")}/commit/${esc(g.last.hash)}" target="_blank" rel="noopener">${esc(g.last.hash)}</a>)</dd>` : ""}
-        </dl>
-        ${g.upstream ? (jobRunning(`update:${s.id}`) || busy.has(`${s.id}:pull`)
-          ? `<div class="links"><button type="button" class="stone" disabled>${ICON.update}Updating...</button></div>`
-          : `<div class="links"><button type="button" class="stone" data-act="pull">${ICON.update}${waiting ? `Update (${waiting} new)` : "Update"}</button></div>`) : ""}`
-        : `<p class="rs" style="margin:0;color:#e8dcc0">Loading...</p>`}
-          </div>
         </div>
         <div role="tabpanel" id="tabpanel-connection" aria-labelledby="tab-connection" ${worldTab === "connection" ? "" : "data-off"}>
         <ul class="addresses">
@@ -818,7 +810,22 @@ function renderWorld() {
         </ul>
         </div>
       </div>
-    </section>`);
+    </section>
+    <section class="panel osrs update-panel" aria-labelledby="update-title">
+            <h3 class="rs-title" id="update-title">Game update</h3>
+        ${g ? `
+        <dl class="kv">
+          <dt>Branch</dt><dd class="y">${esc(g.branch ?? "?")}</dd>
+          <dt>Tracking</dt><dd>${esc(g.fork?.parent ? `${g.fork.parent} (via ${g.upstream})` : g.upstream ?? "none")}</dd>
+          <dt>Status</dt><dd>${sync}</dd>
+          ${g.last ? `<dt>Latest</dt><dd class="latest"><span class="subject">${esc(g.last.subject).replace(/\S+\/\S+/g, '<span class="nowrap">$&</span>')}</span><span class="dim">${esc(g.last.when)} (<a class="dim link" href="https://github.com/${esc(g.fork?.repo ?? "RSPSApp/tsps")}/commit/${esc(g.last.hash)}" target="_blank" rel="noopener">${esc(g.last.hash)}</a>)</span></dd>` : ""}
+        </dl>
+        ${g.upstream ? (jobRunning(`update:${s.id}`) || busy.has(`${s.id}:pull`)
+          ? `<div class="links"><button type="button" class="stone" disabled>${ICON.update}Updating...</button></div>`
+          : `<div class="links"><button type="button" class="stone" data-act="pull">${ICON.update}${waiting ? `Update (${waiting} new)` : "Update"}</button></div>`) : ""}`
+        : `<p class="rs" style="margin:0;color:#e8dcc0">Loading...</p>`}
+    </section>
+    </div>`);
   tickUptime();
   tickTimers();
   if (menuFor() && menuFor() !== s.id && menuFor() !== "new") closeTypeMenu();

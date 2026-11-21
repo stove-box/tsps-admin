@@ -214,7 +214,8 @@ export class Fleet extends EventEmitter {
     // A branch that follows the fork's default branch is also compared with the fork's parent
     // (RSPSApp/tsps), which only reaches the fork when it's synced on GitHub. Checked every 10 min.
     const fork = await this.fork();
-    const synced = fork && rec.git?.branch === fork.branch && rec.git?.upstream === `origin/${fork.branch}`;
+    // By upstream, not branch name: a world's own branch (e.g. Old-School-RuneScape) tracks origin/main.
+    const synced = fork && rec.git?.upstream === `origin/${fork.branch}`;
     if (!synced) rec.forkBehind = null;
     else if (!rec.forkAt || Date.now() - rec.forkAt > 10 * 60_000) {
       rec.forkAt = Date.now();
@@ -546,16 +547,17 @@ export class Fleet extends EventEmitter {
     }
     const layers = readLayers(rec.dir);
     if (Number(merge(layers.shipped, layers.local).experienceMultiplier ?? 1) === rate) return { result: "unchanged" };
-    return this.changeWorld(rec, layers, { world: { experienceMultiplier: rate } }, { what: `with x${rate} XP`, log: `XP rate -> x${rate}` });
+    return this.changeWorld(rec, layers, { world: { experienceMultiplier: rate } }, { what: `with x${rate} XP`, log: `XP rate -> x${rate}`, headline: `World ${this.number(rec)} - Changing to x${rate} XP` });
   }
 
   /**
    * Saves world settings `changes`. Online: through the world settings page's Apply, which saves players,
    * writes world.local.json and restarts (with the in-game update countdown when players are on).
    * Not running, or running with the game stopped: world.local.json is written here, for the next start.
-   * `what` finishes the sentences ("restarts as Members", "with x5 XP"); `log` is the console line.
+   * `what` finishes the sentences ("restarts as Members", "with x5 XP"); `log` is the console line;
+   * `headline`, when given, replaces the message whatever happens (the XP rate's).
    */
-  async changeWorld(rec, layers, changes, { what, log }) {
+  async changeWorld(rec, layers, changes, { what, log, headline }) {
     const fail = (message, status = 409) => { throw Object.assign(new Error(message), { status }); };
     const problem = validate(merge(layers.shipped, applyChanges(layers.shipped, layers.local, changes)));
     if (problem) fail(problem, 400);
@@ -572,9 +574,9 @@ export class Fleet extends EventEmitter {
       this.log(rec, `[admin] ${log} (${applied})`);
       return {
         result: applied,
-        message: applied === "countdown" ? `Players get a ${r.json.seconds}-second update countdown, then World ${this.number(rec)} restarts ${what}.`
-          : applied === "restarting" ? `Restarting ${what}.`
-          : "Saved. It takes effect when the world restarts.",
+        message: headline ?? (applied === "countdown" ? `World ${this.number(rec)} restarts ${what}.`
+          : applied === "restarting" ? `World ${this.number(rec)} is restarting ${what}.`
+          : "Saved. It takes effect when the world restarts."),
       };
     }
     if (rec.procState === "stopping" || status === "starting" || status === "stopping" || (rec.proc && !status)) {
@@ -585,7 +587,7 @@ export class Fleet extends EventEmitter {
     rec.world = worldInfo(rec.dir);
     this.log(rec, `[admin] ${log} (saved for the next launch)`);
     this.emit("state");
-    return { result: "written", message: `Saved. World ${this.number(rec)} starts ${what} from its next launch.` };
+    return { result: "written", message: headline ?? `World ${this.number(rec)} starts ${what} next launch.` };
   }
 
   number(rec) {
@@ -685,11 +687,19 @@ export class Fleet extends EventEmitter {
 
   fetchAll() {
     return this.task({ kind: "fetch", title: "Check for updates", key: "fetch", cooldownMs: 15_000 }, async (onLine, job) => {
+      // Bring the fork up to RSPSApp/tsps on GitHub first, so the fetch below sees its new commits.
+      const fork = await this.fork();
+      if (fork) {
+        onLine(`Syncing ${fork.repo} with ${fork.parent} on GitHub...`);
+        const synced = await stream("gh", ["repo", "sync", fork.repo, "--branch", fork.branch], { onLine });
+        if (synced !== 0) return synced;
+      }
       const code = await stream("git", ["-C", this.repo, "fetch", "--all", "--prune", "--progress"], { onLine });
       for (const r of this.servers.values()) { r.gitAt = 0; r.forkAt = 0; }
       // Ref lines look like " * [new branch]  x -> origin/x" or "   1a2b..3c4d  main -> origin/main".
       const changed = job.lines.filter((l) => /^\s+(\*|[+-]|[0-9a-f]+\.\.)\S*.*->/.test(l)).length;
       job.summary = changed ? "Found new updates" : "No new updates";
+      job.quiet = !changed; // nothing to see: the page leaves out Details
       return code;
     });
   }
@@ -702,7 +712,7 @@ export class Fleet extends EventEmitter {
       // Following the fork's default branch: bring the fork up to its parent on GitHub first, as
       // GitHub's "Sync fork" does. gh refuses (fast-forward only) if the fork's branch has its own commits.
       const fork = await this.fork();
-      if (fork && rec.git?.branch === fork.branch && rec.git?.upstream === `origin/${fork.branch}`) {
+      if (fork && rec.git?.upstream === `origin/${fork.branch}`) {
         onLine(`Syncing ${fork.repo} with ${fork.parent} on GitHub...`);
         const synced = await stream("gh", ["repo", "sync", fork.repo, "--branch", fork.branch], { onLine });
         if (synced !== 0) return synced;
@@ -711,7 +721,8 @@ export class Fleet extends EventEmitter {
       }
       const code = await stream("git", ["-C", rec.dir, "pull", "--ff-only"], { onLine });
       rec.gitAt = 0;
-      job.summary = job.lines.some((l) => /Already up to date/i.test(l)) ? `World ${n} is already up to date` : `World ${n} is updated`;
+      job.quiet = job.lines.some((l) => /Already up to date/i.test(l));
+      job.summary = job.quiet ? `World ${n} is already up to date` : `World ${n} is updated`;
       return code;
     });
   }

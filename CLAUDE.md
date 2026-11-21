@@ -46,10 +46,11 @@ The user-facing guide is README.md. This file keeps the technical detail: how th
   world's world.local.json right after.
 - Remove world runs `scripts/wt rm`; with uncommitted changes (and the tick) it uses `git worktree
   remove --force`. The branch is always kept.
-- Game update: `gitInfo` every 30 s. The sidebar's Update runs `git fetch --all --prune`; a world's
-  Update runs `git pull --ff-only`. When `origin` is a GitHub fork (stove-box/tsps of RSPSApp/tsps)
-  and the world follows the fork's default branch, it also counts the parent's new commits and
-  syncs the fork with `gh repo sync` before pulling.
+- Game update: `gitInfo` every 30 s. When `origin` is a GitHub fork (stove-box/tsps of RSPSApp/tsps),
+  the sidebar's Update first syncs the fork with `gh repo sync`, then runs `git fetch --all --prune`.
+  A world's Update runs `git pull --ff-only`; when the world's upstream is `origin/<fork default>`
+  (whatever the world's own branch is called) it also counts the parent's new commits and syncs the
+  fork before pulling.
 
 ## Panel lifecycle
 
@@ -80,13 +81,16 @@ settings page with that world's token, so the panel link is as good as a passwor
   (world heading, status pill, Copy, Update).
 - One stone surface for every button; variants only tint, edge or size it.
 - `--pad` is the shared inner padding (18px, 16px on narrow screens) that keeps the header, tabs
-  window and console text on one left edge. The Options & Updates right column is the header's button
-  column (330px + 18px gap).
+  window and console text on one left edge. Below the header, the Options/Connection tabs window and
+  the Game update window split the width evenly (`.world-split`; not `.world-row`, which is a
+  switcher row).
 - No `title` tooltips (removed on request). Icon-only buttons carry an `aria-label`.
 - Dialogs go through `askConfirm` (title, optional text, card, note, tick box). World summaries use
   the `.restart-list` card.
 - Job cards are one plain sentence (`jobHeadline`) plus the time. Finished jobs leave after 10 s;
   failed ones stay until Clear.
+  `toast(msg, "info")` adds a page-only card to the same list (`notes`, gone after 10 s); only errors use the
+  pop-up toast.
 
 ## Testing UI changes without a browser
 

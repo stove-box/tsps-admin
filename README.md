@@ -32,8 +32,10 @@ this only changes their numbers, so nothing restarts.
 - The **world type** dropdown (Members, Free-to-play, Hardcore, Leagues) and the **XP rate** button
   change the world. If it's online, it restarts to apply them, with a 60-second countdown when
   players are on. If it's offline, the change applies at the next launch.
-- **Options & Updates:** start the world with the panel, restart it after a crash, pull the latest
-  code, or remove the world (its folder and player saves are deleted).
+- **Options:** start the world with the panel, restart it after a crash, or remove the world (its
+  folder and player saves are deleted).
+- **Game update** (its own window beside Options): the branch, whether it's up to date, the latest
+  change (linked on GitHub), and Update to pull the latest code.
 - **Connection:** the addresses for the game client, server, Agent MCP and RuneLite gateway.
 - **Console:** the world's live output, with filters for Game, Client, Panel and Errors, and a search
   box.
