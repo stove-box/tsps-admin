@@ -1,6 +1,6 @@
 import { execFile, spawn } from "node:child_process";
 import { EventEmitter } from "node:events";
-import { createWriteStream, existsSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
+import { closeSync, createWriteStream, existsSync, mkdirSync, openSync, readFileSync, readSync, renameSync, statSync, writeFileSync } from "node:fs";
 import http from "node:http";
 import { basename, dirname, join, resolve } from "node:path";
 import { childEnv, portsFor, worktreeEnv, worldAdminToken } from "./env.mjs";
@@ -95,6 +95,27 @@ function listeningPids(ports) {
       }
       pids.delete(process.pid);
       done([...pids].filter((p) => Number.isInteger(p) && p > 4));
+    });
+  });
+}
+
+/**
+ * node processes started from inside `dir` (by command line; Windows only). A world run by hand on
+ * other ports isn't seen by the probe, and its open players.sqlite would stop a removal halfway.
+ * shortcut: matches the path in the command line, not the working directory; good enough for yarn/ts-node.
+ */
+function nodePidsIn(dir) {
+  if (process.platform !== "win32") return Promise.resolve([]);
+  const script = "Get-CimInstance Win32_Process -Filter \"Name='node.exe'\" | ForEach-Object { \"$($_.ProcessId)`t$($_.CommandLine)\" }";
+  const want = resolve(dir).toLowerCase() + "\\";
+  return new Promise((done) => {
+    execFile("powershell", ["-NoProfile", "-Command", script], { windowsHide: true, maxBuffer: 8 << 20 }, (_err, stdout) => {
+      const pids = [];
+      for (const line of String(stdout).split(/\r?\n/)) {
+        const [pid, cmd = ""] = line.split("\t");
+        if (cmd.replace(/\//g, "\\").toLowerCase().includes(want) && Number(pid) !== process.pid) pids.push(Number(pid));
+      }
+      done(pids.filter((p) => Number.isInteger(p) && p > 4));
     });
   });
 }
@@ -269,6 +290,30 @@ export class Fleet extends EventEmitter {
     if (up && rec.note && rec.crashed) rec.note = null;
     if (up) rec.crashed = false;
     if (rec.probe.serverStatus === "online" && rec.crashes.length && Date.now() - rec.crashes.at(-1) > CRASH_WINDOW_MS) rec.crashes = [];
+    this.tailExternal(rec);
+  }
+
+  /** A world started from a terminal: its stdout isn't ours, so follow the game's own server/logs/server.log. */
+  tailExternal(rec) {
+    if (rec.proc || !(rec.probe.gameUp || rec.probe.panelUp)) { rec.tail = null; return; }
+    const file = join(rec.dir, "server", "logs", "server.log");
+    let size;
+    try { size = statSync(file).size; } catch { return; }
+    if (!rec.tail) {
+      rec.tail = { pos: Math.max(0, size - 256 * 1024), rest: "", skip: size > 256 * 1024 };
+      this.log(rec, "[admin] running outside this panel; following server/logs/server.log");
+    }
+    if (size < rec.tail.pos) rec.tail.pos = 0; // file was replaced
+    const len = Math.min(size - rec.tail.pos, 4 * 1024 * 1024);
+    if (len <= 0) return;
+    const buf = Buffer.alloc(len);
+    const fd = openSync(file, "r");
+    try { readSync(fd, buf, 0, len, rec.tail.pos); } finally { closeSync(fd); }
+    rec.tail.pos += len;
+    const lines = (rec.tail.rest + buf.toString("utf8")).split("\n");
+    rec.tail.rest = lines.pop();
+    if (rec.tail.skip) { lines.shift(); rec.tail.skip = false; } // started mid-line
+    for (const l of lines) if (l) this.log(rec, l);
   }
 
   start_polling() {
@@ -785,8 +830,15 @@ export class Fleet extends EventEmitter {
     const dir = rec.dir.replace(/\\/g, "/");
     const meta = { kind: "remove", title: `Remove World ${this.number(rec)}`, detail: rec.branch ?? basename(rec.dir), key: `remove:${rec.id}` };
     const kept = `World ${this.number(rec)} was removed`;
+    // Before git deletes anything: a server still running from the folder holds its files open.
+    const stopStray = async (onLine) => {
+      const pids = await nodePidsIn(rec.dir);
+      if (pids.length) onLine(`ending processes still running from this world: ${pids.join(", ")}`);
+      for (const pid of pids) await killTree(pid);
+    };
     if (!rec.git?.dirty) {
       return this.task(meta, async (onLine, job) => {
+        await stopStray(onLine);
         const code = await stream(this.bash, [join(this.repo, "scripts", "wt"), "rm", dir], { cwd: this.repo, onLine });
         job.summary = kept;
         return code;
@@ -797,6 +849,7 @@ export class Fleet extends EventEmitter {
     }
     return this.task(meta, async (onLine, job) => {
       for (const c of rec.git.changes) onLine(`discard ${c}`);
+      await stopStray(onLine);
       // The other half of `wt rm`: drop the agent MCP entry if it pointed at this worktree.
       await stream("claude", ["mcp", "remove", "tsps", "-s", "local"], { cwd: rec.dir, onLine: () => {} });
       const code = await stream("git", ["-C", this.repo, "worktree", "remove", "--force", dir], { onLine });

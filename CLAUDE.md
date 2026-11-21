@@ -44,7 +44,9 @@ The user-facing guide is README.md. This file keeps the technical detail: how th
   rspsapp/main` through Git Bash, then sets the branch's upstream to `origin/main` so Update works.
   An existing branch, or a typed Start from, is used as is. The chosen type is written into the new
   world's world.local.json right after.
-- Remove world runs `scripts/wt rm`; with uncommitted changes (and the tick) it uses `git worktree
+- Remove world first ends any node process whose command line is inside the folder (a server run
+  by hand on other ports isn't seen by the probe, and its open players.sqlite failed a removal
+  halfway). Then it runs `scripts/wt rm`; with uncommitted changes (and the tick) it uses `git worktree
   remove --force`. The branch is always kept.
 - Game update: `gitInfo` every 30 s. When `origin` is a GitHub fork (stove-box/tsps of RSPSApp/tsps),
   the sidebar's Update first syncs the fork with `gh repo sync`, then runs `git fetch --all --prune`.
@@ -61,7 +63,9 @@ The user-facing guide is README.md. This file keeps the technical detail: how th
   `node src/server.mjs`, detached with no window, writing its output to `data/panel.log` (rewritten on
   each restart). The new panel's `startOnBoot` starts the resume list once. The page reloads when its
   event stream reconnects.
-- Logs: each world's current run is in `data/logs/<worktree>.log`, the previous one in `.log.1`. The
+- Logs: each world's current run is in `data/logs/<worktree>.log`, the previous one in `.log.1`.
+  A world started from a terminal has no stdout here, so its console follows the game's own
+  `server/logs/server.log` (`tailExternal`, from the last 256 KB, on each poll). The
   console keeps 3000 lines per world and shows up to 2000.
 
 ## Security
