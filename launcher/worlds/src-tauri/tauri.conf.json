@@ -1,0 +1,31 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "TSPS Worlds",
+  "version": "0.1.0",
+  "identifier": "app.rsps.tspsworlds",
+  "build": {
+    "frontendDist": "../ui"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "TSPS Worlds",
+        "width": 520,
+        "height": 380,
+        "minWidth": 420,
+        "minHeight": 300,
+        "center": true,
+        "backgroundColor": "#16171a"
+      }
+    ],
+    "security": {
+      "csp": null
+    },
+    "withGlobalTauri": true
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["nsis"],
+    "icon": ["icons/icon.ico", "icons/icon.png"]
+  }
+}

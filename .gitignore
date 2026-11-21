@@ -1,3 +1,8 @@
 data/
 config.local.json
 node_modules/
+launcher/target/
+launcher/*/src-tauri/gen/
+launcher/worlds/ui/assets/
+launcher/.desktop-client/
+launcher/admin/src-tauri/resources/

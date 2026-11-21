@@ -43,6 +43,31 @@ this only changes their numbers, so nothing restarts.
 **Bottom left.** **Restart** restarts the panel itself, and the worlds it started come back with it.
 **Update** checks every world for new code. **Recent jobs** shows what's running or just finished.
 
+## Desktop apps
+
+Two apps, each usable on its own. Either one starts the panel in the background if it isn't
+running (hidden, logging to `data/panel.log`), so closing a window never stops your worlds.
+
+- **TSPS Admin** shows this panel in its own window. Closing the window hides it to the tray; click
+  the tray icon to bring it back. **Quit and stop all worlds** in the tray menu asks first, then waits
+  for the worlds to save and stop. **Play** in this window opens the TSPS client on that world.
+- **TSPS Worlds** lists the worlds; click an online one and the TSPS client opens on it.
+
+The TSPS client is RSPSApp's [tsps-desktop-client](https://github.com/RSPSApp/tsps-desktop-client),
+built unmodified with `launcher/client/world.json`. It always connects to the panel's relay
+(`127.0.0.1:43580`, setting `desktopPort`), which forwards it to the world you picked. Its game
+updates come from RSPSApp as usual.
+
+Build and install them once:
+
+1. In `launcher/`, run `npm install` then `npm run build` (needs git, Rust and the
+   [Tauri prerequisites](https://v2.tauri.app/start/prerequisites/); `npm run build:worlds` or
+   `build:admin` builds one). Building TSPS Admin first clones the latest tsps-desktop-client into
+   `launcher/.desktop-client/` and builds it for this operating system (Windows only for now).
+2. Install `TSPS Admin_*-setup.exe` (it installs the TSPS client too) and `TSPS Worlds_*-setup.exe`
+   from `launcher/target/release/bundle/nsis/`. They read the panel's address and token from this
+   checkout and start it with the node that built them, so build them here.
+
 ## Settings
 
 `config.json` holds the defaults. Put your own in `config.local.json` (it isn't committed):

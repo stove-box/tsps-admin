@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TSPS Worlds</title>
+<style>
+/* The admin panel's OSRS look (public/style.css), cut down to the world switcher. */
+@font-face { font-family: "RuneScape Plain 12"; font-display: block; src: url("assets/RuneScape-Plain-12.ttf") format("truetype"); }
+@font-face { font-family: "RuneScape Bold 12"; font-display: block; src: url("assets/RuneScape-Bold-12.ttf") format("truetype"); }
+:root {
+  --bg: #16171a; --gold: #caa95e;
+  --stone: #3e3529; --stone-dark: #2b251c; --stone-edge: #0e0c09; --stone-hi: #5d5240;
+  --rs-orange: #ff981f; --rs-yellow: #ffff00; --rs-white: #ffffff; --rs-red: #ff3030; --off: #9a8f7c;
+  --rs: "RuneScape Plain 12", system-ui, sans-serif;
+  --rs-bold: "RuneScape Bold 12", system-ui, sans-serif;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html, body { height: 100%; }
+body {
+  margin: 0; display: grid; place-items: center; padding: 16px; user-select: none;
+  background: radial-gradient(70% 60% at 50% 40%, #22201c, var(--bg));
+  font: 16px/1.25 var(--rs); color: var(--rs-white); text-shadow: 1px 1px 0 #000;
+}
+:focus-visible { outline: 2px solid var(--rs-yellow); outline-offset: 2px; }
+.osrs {
+  width: min(460px, 100%); padding: 10px 8px 8px; border-radius: 3px;
+  background:
+    radial-gradient(120% 80% at 50% 0%, rgba(255, 255, 255, .035), transparent 60%),
+    repeating-linear-gradient(45deg, rgba(0, 0, 0, .05) 0 2px, transparent 2px 5px),
+    var(--stone);
+  border: 2px solid var(--stone-edge);
+  box-shadow: inset 0 0 0 1px var(--stone-hi), inset 0 0 0 3px var(--stone-dark), 0 6px 18px rgba(0, 0, 0, .5);
+}
+h1 { margin: 0; padding: 2px 0 8px; text-align: center; font: 16px/1.25 var(--rs-bold); font-weight: normal; color: var(--rs-orange); }
+.head, .world { display: grid; grid-template-columns: 22px 52px 58px minmax(0, 1fr); align-items: center; justify-items: center; column-gap: 6px; text-align: center; }
+.head { padding: 0 8px 4px; color: var(--rs-orange); }
+.head > :last-child, .world .activity { justify-self: stretch; }
+.list {
+  display: grid; gap: 1px; padding: 3px; max-height: calc(100vh - 160px); overflow-y: auto;
+  background: var(--stone-dark); border: 1px solid var(--stone-edge); border-radius: 2px;
+  box-shadow: inset 1px 1px 0 rgba(0, 0, 0, .55), 1px 1px 0 var(--stone-hi);
+}
+.world {
+  width: 100%; min-height: 30px; padding: 3px 8px; border: 1px solid transparent; cursor: pointer;
+  font: inherit; color: var(--rs-white); text-shadow: inherit; background: rgba(0, 0, 0, .18);
+}
+.world:nth-child(even) { background: rgba(0, 0, 0, .3); }
+.world:hover:not(:disabled) { background: rgba(255, 255, 255, .07); }
+.world[aria-current="true"] { background: rgba(255, 152, 31, .16); border-color: rgba(255, 152, 31, .55); }
+.world .activity { color: var(--rs-yellow); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.world:disabled { cursor: default; }
+.world:disabled .num, .world:disabled .activity { color: var(--off); }
+.world:disabled .count { color: var(--rs-red); }
+.star { image-rendering: pixelated; }
+.star.league { filter: hue-rotate(75deg) saturate(1.4); }
+.message { margin: 6px; text-align: center; color: #e8dcc0; }
+.foot { display: flex; justify-content: center; gap: 8px; margin-top: 8px; }
+button.stone {
+  min-height: 34px; padding: 0 14px; border-radius: 3px; cursor: pointer;
+  font: 16px/1 var(--rs-bold); color: var(--rs-orange); text-shadow: 1px 1px 0 #000;
+  background: linear-gradient(#5a4e3d, #3e3529 55%, #342c22); border: 1px solid var(--stone-edge);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .14), inset 0 -2px 0 rgba(0, 0, 0, .35), 0 1px 0 rgba(0, 0, 0, .4);
+}
+button.stone:hover { color: var(--rs-yellow); filter: brightness(1.12); }
+button.stone:active { transform: translateY(1px); }
+</style>
+<main class="osrs">
+  <h1>Select a World</h1>
+  <div class="head" aria-hidden="true"><span></span><span>World</span><span>Players</span><span>Activity</span></div>
+  <nav class="list" id="list" aria-label="Worlds"><p class="message">Loading worlds… (starting tsps-admin if needed)</p></nav>
+  <div class="foot" id="foot" hidden><button type="button" class="stone" id="retry">Try again</button></div>
+</main>
+<script>
+const { invoke } = window.__TAURI__.core;
+const list = document.getElementById("list");
+const foot = document.getElementById("foot");
+let busy = false;
+
+// The same sprites and labels as the admin's world switcher (public/app.js).
+const SPRITE = {
+  members: { src: "members-world.png", size: 16, label: "Members" },
+  free: { src: "free-world.png", size: 16, label: "Free-to-play" },
+  league: { src: "members-world.png", size: 16, label: "League" },
+  hardcore: { src: "hardcore-world.png", size: 13, label: "Hardcore World" },
+};
+function kind(world) {
+  if (/^league:\d+$/.test(world.type ?? "")) return "league";
+  if (world.type === "hardcore") return "hardcore";
+  return world.members === false || world.type === "f2p" ? "free" : "members";
+}
+const shortType = (world) => (world.typeLabel ?? (world.members === false ? "Free-to-play" : "Members")).replace(/\s+-\s+.*$/, "");
+
+function message(text, retry = false) {
+  const p = document.createElement("p");
+  p.className = "message";
+  p.textContent = text;
+  list.replaceChildren(p);
+  foot.hidden = !retry;
+}
+
+function render(servers) {
+  foot.hidden = true;
+  if (!servers.length) return message("No worlds yet. Create one in tsps-admin.");
+  const focused = document.activeElement?.dataset?.id;
+  list.replaceChildren(...servers.map((s) => {
+    const online = s.status === "online";
+    const row = document.createElement("button");
+    row.type = "button";
+    row.className = "world";
+    row.dataset.id = s.id;
+    row.disabled = !online;
+    row.title = s.branch ?? s.id;
+    if (s.desktopPicked || s.desktop) row.setAttribute("aria-current", "true");
+    const sprite = SPRITE[kind(s.world)];
+    const img = new Image(sprite.size, sprite.size);
+    img.className = `star ${kind(s.world)}`;
+    img.src = `assets/${sprite.src}`;
+    img.alt = `${sprite.label} world`;
+    const cells = [
+      ["num", String(s.world.number)],
+      ["count", online ? String(s.players ?? 0) : s.status === "failed" ? "CRASH" : ["starting", "stopping", "restarting"].includes(s.status) ? "..." : "OFF"],
+      ["activity", shortType(s.world)],
+    ].map(([cls, text]) => Object.assign(document.createElement("span"), { className: cls, textContent: text }));
+    row.append(img, ...cells);
+    return row;
+  }));
+  (list.querySelector(`[data-id="${CSS.escape(focused ?? "")}"]`) ?? list.querySelector("[aria-current]:not(:disabled)") ?? list.querySelector("button:not(:disabled)"))?.focus();
+}
+
+let loading = false;
+async function refresh() {
+  // One request at a time: the first one may be starting the panel.
+  if (busy || loading) return;
+  loading = true;
+  try { render(await invoke("worlds")); } catch (error) { message(String(error), true); } finally { loading = false; }
+}
+
+list.addEventListener("click", async (event) => {
+  const row = event.target.closest("button.world");
+  if (!row || row.disabled || busy) return;
+  busy = true;
+  message(`Opening World ${row.querySelector(".num").textContent}…`);
+  try { await invoke("play", { id: row.dataset.id }); } catch (error) { busy = false; message(String(error), true); }
+});
+document.getElementById("retry").addEventListener("click", refresh);
+
+refresh();
+// Online status and player counts stay current while the window is open.
+setInterval(refresh, 3000);
+</script>
+</html>

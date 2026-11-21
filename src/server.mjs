@@ -5,7 +5,7 @@ import { existsSync, mkdirSync, openSync, readFileSync, writeFileSync } from "no
 import http from "node:http";
 import { dirname, extname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { startDesktopRelay } from "./desktop-relay.mjs";
+import { openDesktopClient, startDesktopRelay } from "./desktop-relay.mjs";
 import { Fleet } from "./fleet.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -111,6 +111,7 @@ const ACTIONS = {
   pull: (id) => fleet.pull(id),
   "cancel-update": (id) => fleet.cancelUpdate(id),
   "open-folder": (id) => fleet.openFolder(id),
+  "desktop-play": (id) => { fleet.setDesktopWorld(id); openDesktopClient(); },
   remove: (id, body) => fleet.removeWorktree(id, { discard: body.discard === true }),
 };
 
@@ -179,6 +180,7 @@ async function handle(req, res) {
     return send(res, 202, { ok: true, task: result?.id ?? null });
   }
   if (url.pathname === "/api/panel/restart") { send(res, 202, { ok: true }); quit({ restart: true }); return; }
+  if (url.pathname === "/api/panel/quit") { send(res, 202, { ok: true }); quit(); return; }
   if (url.pathname === "/api/order") { fleet.setOrder(body.ids); return send(res, 200, { ok: true }); }
   if (url.pathname === "/api/git/fetch") return send(res, 202, { ok: true, task: fleet.fetchAll().id });
   if (url.pathname === "/api/tasks/clear") { fleet.clearTasks(); return send(res, 200, { ok: true }); }

@@ -1,0 +1,6 @@
+{
+  "identifier": "default",
+  "description": "The starting screen only; the panel itself runs as a remote page with no app access.",
+  "windows": ["main"],
+  "permissions": ["core:default"]
+}

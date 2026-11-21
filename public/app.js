@@ -308,6 +308,7 @@ const JOB_ICON = {
   update: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11m0 0-4-4m4 4 4-4M5 19h14" /></svg>',
   fetch: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.3-5.7M20 4v5h-5" /></svg>',
   remove: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 12a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1l1-12M9 7V4h6v3" /></svg>',
+  crash: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 2 20h20L12 3zM12 10v4M12 17h.01" /></svg>',
   note: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9" /><path d="M12 11v5M12 8h.01" /></svg>',
 };
 let jobShown = null; // the job whose output the Details dialog shows, so it follows the job live
@@ -344,12 +345,22 @@ function renderFetchButton() {
   btn.querySelector(".label").innerHTML = steady(checking ? "Checking..." : "Update", ["Update", "Checking..."]);
 }
 
+const CRASH = /stopped unexpectedly|Gave up/;
+
+/** A world's crash note, as a red card in the notifications. It stays until the world is back online or Clear. */
+function crashCards() {
+  return (state.servers ?? []).filter((s) => s.note && CRASH.test(s.note) && !(s.retryAt > Date.now())).map((s) => ({
+    id: `crash-${s.id}`, kind: "crash", state: "failed", at: s.lastExit?.at ?? Date.now(), lines: [],
+    summary: /^The game/.test(s.note) ? s.note.replace(/^The game/, `World ${s.world.number}`) : `World ${s.world.number}: ${s.note}`,
+  }));
+}
+
 function renderJobs() {
   renderFetchButton();
   // Finished jobs drop off after 10 seconds (the page redraws on every 3 s poll); failed ones stay until Clear.
   // Newest last: the list sits at the foot of the sidebar and fills from the bottom up.
   notes = notes.filter((t) => Date.now() - t.at < 10_000);
-  const jobs = [...notes, ...(state.tasks ?? [])].sort((a, b) => b.at - a.at)
+  const jobs = [...notes, ...crashCards(), ...(state.tasks ?? [])].sort((a, b) => b.at - a.at)
     .filter((t) => t.state !== "done" || Date.now() - (t.endedAt ?? t.at) < 10_000).slice(0, 6).reverse();
   $("#jobs-wrap").hidden = jobs.length === 0;
   $("#jobs-clear").hidden = !jobs.some((t) => t.state !== "running");
@@ -515,7 +526,8 @@ function banners(s) {
   const out = [];
   // While the crash restart counts down, its banner already says so.
   const waiting = s.retryAt && s.retryAt > Date.now();
-  if (s.note && !waiting) out.push(`<div class="banner ${/stopped unexpectedly|Gave up/.test(s.note) ? "error" : "warn"}">${esc(s.note)}</div>`);
+  // A crash note is a card in the notifications instead (crashCards).
+  if (s.note && !waiting && !CRASH.test(s.note)) out.push(`<div class="banner warn">${esc(s.note)}</div>`);
   return out.join("");
 }
 
@@ -1044,6 +1056,12 @@ $("#world").addEventListener("click", (e) => {
     return navigator.clipboard.writeText(copy.dataset.copy)
       .then(() => { copy.innerHTML = steady("Copied", COPY); setTimeout(() => (copy.innerHTML = steady("Copy", COPY)), 1500); })
       .catch(() => toast("Couldn't copy; select the address and copy it by hand."));
+  }
+  // In the TSPS Admin app, Play opens the desktop client on this world; in a browser it opens the web client.
+  if (e.target.closest("a.play") && window.__TSPS_ADMIN_APP__) {
+    e.preventDefault();
+    act(selected, "desktop-play");
+    return;
   }
   const btn = e.target.closest("button[data-act]");
   if (btn) {

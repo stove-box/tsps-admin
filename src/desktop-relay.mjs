@@ -1,4 +1,16 @@
+import { spawn } from "node:child_process";
+import { existsSync } from "node:fs";
 import net from "node:net";
+import { join } from "node:path";
+
+/** The TSPS desktop client, where its installer (tsps-desktop-client built with world.json) puts it. */
+export const DESKTOP_CLIENT = join(process.env.LOCALAPPDATA ?? "", "TSPS Local", "rsps-desktop.exe");
+
+/** Opens the desktop client; it connects through the relay to the world picked last. */
+export function openDesktopClient(exe = DESKTOP_CLIENT) {
+  if (!existsSync(exe)) throw new Error(`The desktop client isn't installed (${exe}).`);
+  spawn(exe, [], { detached: true, stdio: "ignore" }).unref();
+}
 
 /**
  * One fixed address for the TSPS desktop launcher. Every connection (its /api/world-info lookup and

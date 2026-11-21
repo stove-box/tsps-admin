@@ -1,0 +1,13 @@
+{
+  "name": "tsps-launcher",
+  "private": true,
+  "description": "Desktop apps for tsps-admin: TSPS Worlds (world select, opens the desktop client) and TSPS Admin (the panel in a window, kept in the tray).",
+  "scripts": {
+    "build": "node build.mjs",
+    "build:worlds": "node build.mjs worlds",
+    "build:admin": "node build.mjs admin"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "2.12.6"
+  }
+}

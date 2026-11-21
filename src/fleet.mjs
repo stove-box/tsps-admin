@@ -120,6 +120,28 @@ function nodePidsIn(dir) {
   });
 }
 
+/**
+ * Processes still alive under `root`, even after it exited: Windows keeps an orphan's ParentProcessId,
+ * so the `yarn start` tree can be walked from its dead root. Only processes created since `since`
+ * (ms), so a reused PID isn't followed. Elsewhere the tree is a process group (`killTree` uses -pid).
+ */
+function treePids(root, since) {
+  if (process.platform !== "win32") return Promise.resolve([]);
+  const script = "Get-CimInstance Win32_Process | ForEach-Object { \"$($_.ProcessId) $($_.ParentProcessId) $([DateTimeOffset]::new($_.CreationDate).ToUnixTimeMilliseconds())\" }";
+  return new Promise((done) => {
+    execFile("powershell", ["-NoProfile", "-Command", script], { windowsHide: true, maxBuffer: 8 << 20 }, (_err, stdout) => {
+      const kids = new Map();
+      for (const line of String(stdout).split(/\r?\n/)) {
+        const [pid, ppid, made] = line.trim().split(" ").map(Number);
+        if (made >= since - 1000) kids.set(ppid, [...(kids.get(ppid) ?? []), pid]);
+      }
+      const out = [];
+      for (let q = [root]; q.length;) for (const c of kids.get(q.shift()) ?? []) if (c !== process.pid && !out.includes(c)) { out.push(c); q.push(c); }
+      done(out);
+    });
+  });
+}
+
 /** world.json with world.local.json over it: what the world list shows about this world. */
 export function worldInfo(dir) {
   let world = {};
@@ -360,6 +382,11 @@ export class Fleet extends EventEmitter {
     if (rec.probe?.gameUp || rec.probe?.panelUp) {
       throw Object.assign(new Error("Already running outside the panel (started from a terminal). Use Game start/stop, or stop it there first."), { status: 409 });
     }
+    // Something holding the ports but not answering is a dead run's leftover: it would make this one fail.
+    if (rec.starting) return;
+    rec.starting = true;
+    try { await this.freePorts(rec); } finally { rec.starting = false; }
+    if (rec.proc) return;
     // An automatic restart keeps appending, so the crash stays in the same file.
     if (!auto || !rec.logFile) this.openLogFile(rec);
     this.log(rec, `[admin] yarn start in ${rec.dir}`);
@@ -373,7 +400,7 @@ export class Fleet extends EventEmitter {
     });
     rec.proc = proc;
     rec.procState = "running";
-    rec.startedAt = Date.now();
+    const startedAt = (rec.startedAt = Date.now());
     rec.stopRequested = false;
     // A crash's automatic restart shows as a restart; a plain launch as a launch.
     if (auto && rec.transition?.kind !== "restart") this.beginTransition(rec, "restart", "starting");
@@ -398,11 +425,29 @@ export class Fleet extends EventEmitter {
       if (rec.transition?.kind === "restart") rec.transition.phase = "starting";
       else rec.transition = null;
       this.log(rec, `[admin] exited (${signal ?? `code ${code}`})`);
-      if (!rec.stopRequested && !this.closing) this.crashed(rec, () => this.start(rec.id, { auto: true }));
-      this.emit("state");
-      rec.stopResolve?.();
+      // A crash (or a parent killed first) can leave the game, nodemon or the client running on the
+      // world's ports; they'd block the restart and show the world as "running outside this panel".
+      this.endOrphans(rec, proc.pid, startedAt).finally(() => {
+        if (!rec.stopRequested && !this.closing) this.crashed(rec, () => this.start(rec.id, { auto: true }));
+        this.emit("state");
+        rec.stopResolve?.();
+      });
     });
     this.emit("state");
+  }
+
+  /** Ends what's left of a finished `yarn start` tree, then anything still listening on the world's ports. */
+  async endOrphans(rec, root, since) {
+    const left = await treePids(root, since);
+    if (left.length) this.log(rec, `[admin] ending leftover processes: ${left.join(", ")}`);
+    for (const pid of left) await killTree(pid);
+    await this.freePorts(rec);
+  }
+
+  async freePorts(rec) {
+    const pids = await listeningPids(Object.values(rec.ports).filter((p) => typeof p === "number"));
+    if (pids.length) this.log(rec, `[admin] ending processes still on this world's ports: ${pids.join(", ")}`);
+    for (const pid of pids) await killTree(pid);
   }
 
   /** Records a crash and, if auto-restart is on, schedules `again` with backoff. */
@@ -513,9 +558,7 @@ export class Fleet extends EventEmitter {
     try {
       await this.saveAndStopGame(rec);
       this.beginTransition(rec, "shutdown", "closing");
-      const pids = await listeningPids(Object.values(rec.ports).filter((p) => typeof p === "number"));
-      this.log(rec, `[admin] ending terminal-started processes: ${pids.join(", ") || "none left"}`);
-      for (const pid of pids) await killTree(pid);
+      await this.freePorts(rec);
     } finally {
       rec.transition = null;
       rec.procState = null;
@@ -727,6 +770,8 @@ export class Fleet extends EventEmitter {
   /** Drops finished jobs from Recent jobs; running ones stay. */
   clearTasks() {
     this.tasks = this.tasks.filter((t) => t.state === "running");
+    // Crash notes are cards in the same list; Clear dismisses them too (the console keeps the record).
+    for (const rec of this.servers.values()) if (rec.crashed && !rec.retryAt) rec.note = null;
     this.emit("state");
   }
 

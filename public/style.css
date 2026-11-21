@@ -196,6 +196,7 @@ button.stone.icon svg { width: 18px; height: 18px; }
 /* How it's going shows only in the left edge and the icon; the sentence is always the same cream. */
 .job.j-done { --job-tone: #3ec43e; }
 .job.j-failed { --job-tone: #e8574a; }
+.job.k-crash { background: rgba(70, 18, 14, .55); border-color: #6b2f28; }
 .job-icon { width: 16px; height: 18px; display: grid; place-items: center; color: var(--job-tone); }
 .job-icon svg { width: 15px; height: 15px; filter: drop-shadow(1px 1px 0 #000); }
 .job.j-running .job-icon { animation: blink 1.1s steps(2) infinite; }

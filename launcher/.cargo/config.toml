@@ -1,0 +1,3 @@
+[build]
+# Both apps share one build folder, so their common crates compile once.
+target-dir = "target"

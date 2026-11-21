@@ -32,6 +32,10 @@ The user-facing guide is README.md. This file keeps the technical detail: how th
 - Shut down asks the world settings page (`/api/server/stop`, the world's admin token) to save players,
   waits up to 60 s, then `taskkill /T`. A world launched from a terminal ("Running outside this
   panel") is stopped the same way, then the processes on its own ports are ended.
+- When `yarn start` exits (crash or stop), `endOrphans` walks the tree from its dead PID (Windows
+  keeps an orphan's ParentProcessId; only processes created since the launch) and ends what's left,
+  then anything on the world's ports. `start` frees the ports too. Leftover nodemon/game processes
+  used to block the restart and make the world look "Running outside this panel".
 - Crash restart backoff is 5 s, 15 s, 30 s, 1 min, 2 min, 5 min, then it gives up; the count resets
   after 15 minutes online.
 - World type and XP rate share `Fleet.changeWorld`. Online, it goes through the world settings page's
@@ -93,6 +97,7 @@ settings page with that world's token, so the panel link is as good as a passwor
   the `.restart-list` card.
 - Job cards are one plain sentence (`jobHeadline`) plus the time. Finished jobs leave after 10 s;
   failed ones stay until Clear.
+  A world's crash note is a red card there too (`crashCards`, `.k-crash`), not a banner; Clear dismisses it.
   `toast(msg, "info")` adds a page-only card to the same list (`notes`, gone after 10 s); only errors use the
   pop-up toast.
 

@@ -26,3 +26,8 @@ test("the relay forwards each connection to the world picked at that moment", as
     for (const w of worlds) w.close();
   }
 });
+
+test("Play in the app says so when the desktop client isn't installed", async () => {
+  const { openDesktopClient } = await import("../src/desktop-relay.mjs");
+  assert.throws(() => openDesktopClient("Z:/nowhere/rsps-desktop.exe"), /isn't installed/);
+});
