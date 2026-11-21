@@ -111,7 +111,6 @@ function render(servers) {
     row.className = "world";
     row.dataset.id = s.id;
     row.disabled = !online;
-    row.title = s.branch ?? s.id;
     if (s.desktopPicked || s.desktop) row.setAttribute("aria-current", "true");
     const sprite = SPRITE[kind(s.world)];
     const img = new Image(sprite.size, sprite.size);

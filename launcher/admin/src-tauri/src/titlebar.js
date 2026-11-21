@@ -41,7 +41,6 @@
       button.type = "button";
       button.className = command === "hide" ? "close" : "";
       button.setAttribute("aria-label", LABELS[command]);
-      button.title = LABELS[command];
       button.innerHTML = `<svg viewBox="0 0 24 24" aria-hidden="true">${ICONS[command]}</svg>`;
       button.addEventListener("click", () => call(command));
       controls.append(button);
