@@ -28,9 +28,13 @@ h1 { margin: 0 0 10px; font: 16px/1.25 var(--rs-bold); font-weight: normal; colo
 @keyframes sweep { 0% { left: -40%; } 100% { left: 100%; } }
 @media (prefers-reduced-motion: reduce) { .fill { animation: none; left: 3px; width: calc(100% - 6px); opacity: .6; } }
 #status { position: relative; display: grid; place-items: center; height: 100%; white-space: pre-line; }
-.tip { margin: 14px 0 0; padding: 10px 12px; min-height: 58px; background: rgba(0, 0, 0, .22); border: 1px solid rgba(14, 12, 9, .8); border-radius: 2px; }
-.tip strong { display: block; margin-bottom: 4px; font: 16px/1.25 var(--rs-bold); font-weight: normal; color: #ffff00; }
-.tip span { color: #e8dcc0; transition: opacity .3s; }
+/* Room for three lines, so the box keeps its size as tips change. */
+.tip { margin: 14px 0 0; padding: 10px 14px 12px; min-height: calc(3 * 1.3em + 4px + 1.25em + 22px);
+  display: flex; flex-direction: column; background: rgba(0, 0, 0, .22); border: 1px solid rgba(14, 12, 9, .8); border-radius: 2px; }
+.tip strong { margin-bottom: 4px; font: 16px/1.25 var(--rs-bold); font-weight: normal; color: #ffff00; }
+/* Even lines, no orphaned last word, and never wider than a comfortable reading line. */
+.tip span { flex: 1; display: grid; place-items: center; max-width: 40ch; margin: 0 auto;
+  color: #e8dcc0; text-wrap: balance; overflow-wrap: break-word; transition: opacity .3s; }
 </style>
 <main class="osrs">
   <h1>TSPS Admin</h1>
